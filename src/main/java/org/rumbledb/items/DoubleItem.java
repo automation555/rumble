@@ -133,6 +133,11 @@ public class DoubleItem implements Item {
     }
 
     @Override
+    public String serialize() {
+        return getStringValue();
+    }
+
+    @Override
     public void write(Kryo kryo, Output output) {
         output.writeDouble(this.value);
     }
