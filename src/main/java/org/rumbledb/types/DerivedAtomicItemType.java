@@ -364,8 +364,13 @@ public class DerivedAtomicItemType implements ItemType {
     }
 
     @Override
+    public boolean isDataFrameType() {
+        return true;
+    }
+
+    @Override
     public boolean isCompatibleWithDataFrames() {
-        return this.baseType.isCompatibleWithDataFrames();
+        return true;
     }
 
     @Override

@@ -198,6 +198,11 @@ public class ArrayItemType implements ItemType {
     }
 
     @Override
+    public boolean isDataFrameType() {
+        return this.content.isDataFrameType();
+    }
+
+    @Override
     public void resolve(DynamicContext context, ExceptionMetadata metadata) {
         if (!this.baseType.isResolved()) {
             this.baseType.resolve(context, metadata);
