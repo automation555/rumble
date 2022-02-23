@@ -20,23 +20,25 @@
 
 package org.rumbledb.runtime.functions.object;
 
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.FlatMapFunction;
 import org.rumbledb.api.Item;
 import org.rumbledb.context.DynamicContext;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.items.ItemFactory;
+import org.rumbledb.runtime.HybridRuntimeIterator;
 import org.rumbledb.runtime.RuntimeIterator;
-import org.rumbledb.runtime.functions.base.LocalFunctionCallIterator;
+
 import sparksoniq.jsoniq.ExecutionMode;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
-public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIterator {
-
+public class ObjectDescendantPairsFunctionIterator extends HybridRuntimeIterator {
 
     private static final long serialVersionUID = 1L;
     private RuntimeIterator iterator;
@@ -48,21 +50,19 @@ public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIter
             ExceptionMetadata iteratorMetadata
     ) {
         super(arguments, executionMode, iteratorMetadata);
+        this.iterator = arguments.get(0);
     }
 
     @Override
-    public void open(DynamicContext context) {
-        super.open(context);
-
-        this.iterator = this.children.get(0);
-        this.iterator.open(context);
+    public void openLocal() {
+        this.iterator.open(this.currentDynamicContextForLocalExecution);
         this.nextResults = new LinkedList<>();
 
         setNextResult();
     }
 
     @Override
-    public Item next() {
+    public Item nextLocal() {
         if (this.hasNext) {
             Item result = this.nextResults.remove(); // save the result to be returned
             if (this.nextResults.isEmpty()) {
@@ -106,17 +106,42 @@ public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIter
                 for (String key : keys) {
                     Item value = item.getItemByKey(key);
 
-                    LinkedHashMap<String, Item> content = new LinkedHashMap<>();
-                    content.put(key, value);
+                    List<String> keyList = Collections.singletonList(key);
+                    List<Item> valueList = Collections.singletonList(value);
 
                     Item result = ItemFactory.getInstance()
-                        .createObjectItem(content);
+                        .createObjectItem(keyList, valueList, getMetadata());
                     this.nextResults.add(result);
-                    getDescendantPairs(new ArrayList<Item>(content.values()));
+                    getDescendantPairs(valueList);
                 }
             } else {
                 // do nothing
             }
         }
+    }
+
+    @Override
+    protected boolean hasNextLocal() {
+        return this.hasNext;
+    }
+
+    @Override
+    protected void resetLocal(DynamicContext context) {
+        this.iterator.open(this.currentDynamicContextForLocalExecution);
+        this.nextResults.clear();
+
+        setNextResult();
+    }
+
+    @Override
+    protected void closeLocal() {
+        this.iterator.close();
+    }
+
+    @Override
+    public JavaRDD<Item> getRDDAux(DynamicContext dynamicContext) {
+        JavaRDD<Item> childRDD = this.iterator.getRDD(dynamicContext);
+        FlatMapFunction<Item, Item> transformation = new ObjectDescendantPairsClosure(getMetadata());
+        return childRDD.flatMap(transformation);
     }
 }
