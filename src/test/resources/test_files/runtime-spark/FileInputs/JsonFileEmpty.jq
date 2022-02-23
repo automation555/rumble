@@ -1,2 +1,2 @@
 (:JIQS: ShouldRun; Output="" :)
-json-file("../../../queries/emptyFile.txt", 10)
+json-file("./src/test/resources/test_data/emptyFile.txt", 10)

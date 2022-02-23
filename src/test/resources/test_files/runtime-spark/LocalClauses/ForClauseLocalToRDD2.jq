@@ -1,5 +1,5 @@
 (:JIQS: ShouldRun; Output="(Latvian, Russian, Czech, Greek, Serbian)" :)
-let $name := "../../../queries/conf-ex.json"
+let $name := "./src/test/resources/test_data/conf-ex.json"
 for $line in json-file($name)
 return $line.guess
 

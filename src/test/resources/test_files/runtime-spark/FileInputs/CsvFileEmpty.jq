@@ -1,2 +1,2 @@
 (:JIQS: ShouldRun; Output="" :)
-csv-file("../../../queries/confusion_sample_empty.json")
+csv-file("./src/test/resources/test_data/confusion_sample_empty.json")

@@ -1,6 +1,6 @@
-(:JIQS: ShouldCrash; ErrorCode="XPST0051"; :)
+(:JIQS: ShouldCrash; ErrorCode="RBML0005"; :)
 annotate(
-    json-file("../../../../queries/rumbleML/sample-ml-data-age-weight.json"),
+    json-file("./src/test/resources/test_data/rumbleML/sample-ml-data-age-weight.json"),
     {"id": "int", "age": "str", "weight": "dec"}
 )
 

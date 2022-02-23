@@ -11,17 +11,15 @@ let $data := annotate(
     $raw-data,
     { "label": "double", "censor": "double", "feature1": "double", "feature2": "double"}
 )
-let $vector-assembler := get-transformer("VectorAssembler")
-let $data := $vector-assembler($data, {"inputCols" : [ "feature1", "feature2" ], "outputCol" : "features" })
 
 let $est := get-estimator("AFTSurvivalRegression")
 let $tra := $est(
     $data,
-    { "quantileProbabilities": [0.3, 0.6], "quantilesCol": "quantiles"}
+    { "featuresCol": ["feature1", "feature2"], "quantileProbabilities": [0.3, 0.6], "quantilesCol": "quantiles"}
 )
 for $result in $tra(
     $data,
-    { }
+    { "featuresCol": ["feature1", "feature2"] }
 )
 return {
     "label": $result.label,

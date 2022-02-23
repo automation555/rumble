@@ -1,2 +1,2 @@
 (:JIQS: ShouldRun; Output="(foo, bar, foobar)" :)
-text-file("../../../queries/file.txt", 10)
+text-file("./src/test/resources/test_data/file.txt", 10)

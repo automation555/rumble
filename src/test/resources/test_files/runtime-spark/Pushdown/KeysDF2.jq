@@ -1,2 +1,2 @@
 (:JIQS: ShouldRun; Output="" :)
-keys(keys(structured-json-file("../../../queries/conf-ex.json")))
+keys(keys(structured-json-file("./src/test/resources/test_data/conf-ex.json")))

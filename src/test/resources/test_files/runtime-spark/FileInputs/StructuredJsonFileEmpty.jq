@@ -1,2 +1,2 @@
 (:JIQS: ShouldRun; Output="" :)
-structured-json-file("../../../queries/emptyFile.txt")
+structured-json-file("./src/test/resources/test_data/emptyFile.txt")

@@ -31,7 +31,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.rumbledb.api.Item;
-import org.rumbledb.api.SequenceOfItems;
+import org.rumbledb.context.DynamicContext;
+import org.rumbledb.runtime.RuntimeIterator;
+
 import sparksoniq.spark.SparkSessionManager;
 import utils.FileManager;
 
@@ -81,8 +83,6 @@ public class RuntimeTests extends AnnotationsTestsBase {
         sparkConfiguration.set("spark.executor.extraClassPath", "lib/");
         sparkConfiguration.set("spark.driver.extraClassPath", "lib/");
         sparkConfiguration.set("spark.sql.crossJoin.enabled", "true"); // enables cartesian product
-        sparkConfiguration.set("spark.sql.shuffle.partitions", "10"); // since the data is small for testing, we use
-                                                                      // less partitions.
 
         // prevents spark from failing to start on MacOS when disconnected from the internet
         sparkConfiguration.set("spark.driver.host", "127.0.0.1");
@@ -94,25 +94,25 @@ public class RuntimeTests extends AnnotationsTestsBase {
         // sparkConfiguration.set("spark.speculation.quantile", "0.5");
         SparkSessionManager.getInstance().initializeConfigurationAndSession(sparkConfiguration, true);
         SparkSessionManager.COLLECT_ITEM_LIMIT = configuration.getResultSizeCap();
-        System.err.println("Spark version: " + SparkSessionManager.getInstance().getJavaSparkContext().version());
     }
 
     @Test(timeout = 1000000)
     public void testRuntimeIterators() throws Throwable {
         System.err.println(AnnotationsTestsBase.counter++ + " : " + this.testFile);
-        testAnnotations(this.testFile.getAbsolutePath(), AnnotationsTestsBase.configuration);
+        testAnnotations(this.testFile.getAbsolutePath());
     }
 
     @Override
     protected void checkExpectedOutput(
             String expectedOutput,
-            SequenceOfItems sequence
+            RuntimeIterator runtimeIterator,
+            DynamicContext dynamicContext
     ) {
         String actualOutput;
-        if (!sequence.availableAsRDD()) {
-            actualOutput = runIterators(sequence);
+        if (!runtimeIterator.isRDD()) {
+            actualOutput = runIterators(runtimeIterator, dynamicContext);
         } else {
-            actualOutput = getRDDResults(sequence);
+            actualOutput = getRDDResults(runtimeIterator, dynamicContext);
         }
         Assert.assertTrue(
             "Expected output: " + expectedOutput + "\nActual result: " + actualOutput,
@@ -121,22 +121,22 @@ public class RuntimeTests extends AnnotationsTestsBase {
         // unorderedItemSequenceStringsAreEqual(expectedOutput, actualOutput));
     }
 
-    protected String runIterators(SequenceOfItems sequence) {
-        String actualOutput = getIteratorOutput(sequence);
+    protected String runIterators(RuntimeIterator iterator, DynamicContext dynamicContext) {
+        String actualOutput = getIteratorOutput(iterator, dynamicContext);
         return actualOutput;
     }
 
-    protected String getIteratorOutput(SequenceOfItems sequence) {
-        sequence.open();
+    protected String getIteratorOutput(RuntimeIterator iterator, DynamicContext dynamicContext) {
+        iterator.open(dynamicContext);
         Item result = null;
-        if (sequence.hasNext()) {
-            result = sequence.next();
+        if (iterator.hasNext()) {
+            result = iterator.next();
         }
         if (result == null) {
             return "";
         }
         String singleOutput = result.serialize();
-        if (!sequence.hasNext()) {
+        if (!iterator.hasNext()) {
             return singleOutput;
         } else {
             int itemCount = 1;
@@ -145,18 +145,18 @@ public class RuntimeTests extends AnnotationsTestsBase {
             sb.append(result.serialize());
             sb.append(", ");
             while (
-                sequence.hasNext()
+                iterator.hasNext()
                     &&
                     ((itemCount < AnnotationsTestsBase.configuration.getResultSizeCap()
                         && AnnotationsTestsBase.configuration.getResultSizeCap() > 0)
                         ||
                         AnnotationsTestsBase.configuration.getResultSizeCap() == 0)
             ) {
-                sb.append(sequence.next().serialize());
+                sb.append(iterator.next().serialize());
                 sb.append(", ");
                 itemCount++;
             }
-            if (sequence.hasNext() && itemCount == AnnotationsTestsBase.configuration.getResultSizeCap()) {
+            if (iterator.hasNext() && itemCount == AnnotationsTestsBase.configuration.getResultSizeCap()) {
                 System.err.println(
                     "Warning! The output sequence contains a large number of items but its materialization was capped at "
                         + SparkSessionManager.COLLECT_ITEM_LIMIT
@@ -171,8 +171,8 @@ public class RuntimeTests extends AnnotationsTestsBase {
         }
     }
 
-    private String getRDDResults(SequenceOfItems sequence) {
-        JavaRDD<Item> rdd = sequence.getAsRDD();
+    private String getRDDResults(RuntimeIterator runtimeIterator, DynamicContext dynamicContext) {
+        JavaRDD<Item> rdd = runtimeIterator.getRDD(dynamicContext);
         JavaRDD<String> output = rdd.map(o -> o.serialize());
         List<String> collectedOutput = new ArrayList<String>();
         SparkSessionManager.collectRDDwithLimitWarningOnly(output, collectedOutput);

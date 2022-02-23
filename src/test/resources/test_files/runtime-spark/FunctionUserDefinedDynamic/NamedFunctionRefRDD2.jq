@@ -2,6 +2,6 @@
 declare function f($x) {
 $x.guess eq "Finnish"
 };
-for $o in json-file("../../../queries/confusion_sample.json")
+for $o in json-file("./src/test/resources/test_data/confusion_sample.json")
 where f($o)
 return $o

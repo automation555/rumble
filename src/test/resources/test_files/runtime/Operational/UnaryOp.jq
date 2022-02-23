@@ -1,8 +1,6 @@
-(:JIQS: ShouldRun; Output="(1, 1, 2, -2)" :)
+(:JIQS: ShouldRun; Output="(1, 1)" :)
 
 -(),
-(1, -(), 1),
---2,
----2
+(1, -(), 1)
 
 (: unary operator with empty sequence :)

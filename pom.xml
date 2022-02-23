@@ -26,7 +26,7 @@
 
     <groupId>com.github.rumbledb</groupId>
     <artifactId>spark-rumble</artifactId>
-    <version>1.7.0</version>
+    <version>1.6.2</version>
     <packaging>jar</packaging>
     <name>Rumble</name>
     <description>A JSONiq engine to query large-scale JSON datasets stored on HDFS. Spark under the hood.</description>
@@ -86,9 +86,12 @@
                             <mainClass>org.rumbledb.cli.Main</mainClass>
                         </manifest>
                     </archive>
-                    <descriptorRefs>
+                    <!-- <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
+                    </descriptorRefs> -->
+                    <descriptors>
+                        <descriptor>src/assembly/custom-jar-with-dependencies-assembly.xml</descriptor>
+                    </descriptors>
                 </configuration>
             </plugin>
             <plugin>
@@ -262,11 +265,6 @@
             <artifactId>commons-lang3</artifactId>
             <version>3.9</version>
         </dependency>
-		<dependency>
-		  <groupId>org.apache.httpcomponents</groupId>
-		  <artifactId>httpclient</artifactId>
-		  <version>4.5.12</version>
-		</dependency>
 		<dependency>
 		    <groupId>edu.vanderbilt.accre</groupId>
 		    <artifactId>laurelin</artifactId>
