@@ -29,9 +29,6 @@ import org.rumbledb.expressions.ExecutionMode;
 import org.rumbledb.items.ItemFactory;
 import org.rumbledb.runtime.AtMostOneItemLocalRuntimeIterator;
 import org.rumbledb.runtime.RuntimeIterator;
-import org.rumbledb.runtime.flwor.NativeClauseContext;
-import org.rumbledb.types.BuiltinTypesCatalogue;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -54,22 +51,13 @@ public class RoundFunctionIterator extends AtMostOneItemLocalRuntimeIterator {
         if (value == null) {
             return null;
         }
-        if (
-            (value.isDouble() && Double.isNaN(value.getDoubleValue()))
-                || (value.isFloat() && Float.isNaN(value.getFloatValue()))
-        ) {
+        if (value.isDouble() && Double.isNaN(value.getDoubleValue())) {
             return value;
         }
-        if (
-            (value.isDouble() && Double.isInfinite(value.getDoubleValue()))
-                || (value.isFloat() && Float.isInfinite(value.getFloatValue()))
-        ) {
+        if (value.isDouble() && Double.isInfinite(value.getDoubleValue())) {
             return value;
         }
-        if (
-            (value.isDouble() && Double.compare(value.getDoubleValue(), -0d) == 0
-                || (value.isFloat() && Float.compare(value.getFloatValue(), -0f) == 0))
-        ) {
+        if (value.isDouble() && value.getDoubleValue() == 0d) {
             return value;
         }
         int precision;
@@ -83,76 +71,50 @@ public class RoundFunctionIterator extends AtMostOneItemLocalRuntimeIterator {
             precision = 0;
         }
         try {
-            if (value.isInt()) {
-                BigDecimal bd = new BigDecimal(value.getIntValue()).setScale(precision, RoundingMode.HALF_UP);
-                return ItemFactory.getInstance().createIntItem(bd.intValue());
-            }
-            if (value.isInteger()) {
-                BigDecimal bd = new BigDecimal(value.getIntegerValue()).setScale(precision, RoundingMode.HALF_UP);
-                return ItemFactory.getInstance().createIntegerItem(bd.toBigInteger());
-            }
             if (value.isDecimal()) {
-                double sign = getSign(value.getDecimalValue().doubleValue());
-                BigDecimal bd;
-                if (sign == 1) {
-                    bd = value.getDecimalValue().setScale(precision, RoundingMode.HALF_UP);
-                } else {
-                    bd = value.getDecimalValue().setScale(precision, RoundingMode.HALF_DOWN);
-                }
+                BigDecimal bd = value.getDecimalValue().setScale(precision, RoundingMode.HALF_UP);
                 return ItemFactory.getInstance().createDecimalItem(bd);
             }
             if (value.isDouble()) {
-                double sign = getSign(value.getDoubleValue());
-                BigDecimal bd;
-                if (sign == 1) {
-                    bd = new BigDecimal(value.getDoubleValue()).setScale(precision, RoundingMode.HALF_UP);
-                } else {
-                    bd = new BigDecimal(value.getDoubleValue()).setScale(precision, RoundingMode.HALF_DOWN);
+                if (precision == 0) {
+                    double dvalue = value.getDoubleValue();
+                    long result = Math.round(dvalue);
+                    if (result != 0) {
+                        return ItemFactory.getInstance().createDoubleItem((double) result);
+                    } else {
+                        if (Math.signum(dvalue) == 1) {
+                            return ItemFactory.getInstance().createDoubleItem(0.0);
+                        } else {
+                            return ItemFactory.getInstance().createDoubleItem(-0.0);
+                        }
+                    }
                 }
-
-                return ItemFactory.getInstance().createDoubleItem(sign * Math.abs(bd.doubleValue()));
+                BigDecimal bd = new BigDecimal(value.getDoubleValue());
+                bd = bd.setScale(precision, RoundingMode.HALF_UP);
+                return ItemFactory.getInstance().createDoubleItem(bd.doubleValue());
             }
             if (value.isFloat()) {
-
-                double sign = getSign(value.getFloatValue());
-                BigDecimal bd;
-                if (sign == 1) {
-                    bd = new BigDecimal(value.getFloatValue()).setScale(precision, RoundingMode.HALF_UP);
-                } else {
-                    bd = new BigDecimal(value.getFloatValue()).setScale(precision, RoundingMode.HALF_DOWN);
+                if (precision == 0) {
+                    float fvalue = value.getFloatValue();
+                    long result = Math.round(fvalue);
+                    if (result != 0) {
+                        ItemFactory.getInstance().createDoubleItem((double) result);
+                    } else {
+                        if (Math.signum(fvalue) == 1) {
+                            return ItemFactory.getInstance().createDoubleItem(0.0);
+                        } else {
+                            return ItemFactory.getInstance().createDoubleItem(-0.0);
+                        }
+                    }
                 }
-                return ItemFactory.getInstance().createFloatItem((float) sign * Math.abs(bd.floatValue()));
+                BigDecimal bd = new BigDecimal(value.getFloatValue());
+                bd = bd.setScale(precision, RoundingMode.HALF_UP);
+                return ItemFactory.getInstance().createFloatItem(bd.floatValue());
             }
             throw new UnexpectedTypeException("Unexpected value in round(): " + value.getDynamicType(), getMetadata());
 
         } catch (IteratorFlowException e) {
             throw new IteratorFlowException(e.getJSONiqErrorMessage(), getMetadata());
         }
-    }
-
-    private double getSign(double doubleValue) {
-        double sign = 0;
-        if (doubleValue > 0)
-            sign = 1;
-        if (doubleValue < 0)
-            sign = -1;
-        return sign;
-    }
-
-    @Override
-    public NativeClauseContext generateNativeQuery(NativeClauseContext nativeClauseContext) {
-        NativeClauseContext value = this.children.get(0).generateNativeQuery(nativeClauseContext);
-        if (value == NativeClauseContext.NoNativeQuery) {
-            return NativeClauseContext.NoNativeQuery;
-        }
-        if (!value.getResultingType().equals(BuiltinTypesCatalogue.floatItem)) {
-            return NativeClauseContext.NoNativeQuery;
-        }
-        String resultingQuery = "( CAST ("
-            + "ROUND( "
-            + value.getResultingQuery()
-            + " ) AS FLOAT)"
-            + " )";
-        return new NativeClauseContext(nativeClauseContext, resultingQuery, BuiltinTypesCatalogue.floatItem);
     }
 }
