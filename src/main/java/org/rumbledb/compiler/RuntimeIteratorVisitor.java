@@ -126,6 +126,7 @@ import org.rumbledb.runtime.typing.CastableIterator;
 import org.rumbledb.runtime.typing.InstanceOfIterator;
 import org.rumbledb.runtime.typing.TreatIterator;
 import org.rumbledb.runtime.primary.ArrayRuntimeIterator;
+import org.rumbledb.runtime.primary.AtMostOneItemVariableReferenceIterator;
 import org.rumbledb.runtime.primary.BooleanRuntimeIterator;
 import org.rumbledb.runtime.primary.ContextExpressionIterator;
 import org.rumbledb.runtime.primary.DecimalRuntimeIterator;
@@ -136,6 +137,7 @@ import org.rumbledb.runtime.primary.ObjectConstructorRuntimeIterator;
 import org.rumbledb.runtime.primary.StringRuntimeIterator;
 import org.rumbledb.runtime.primary.VariableReferenceIterator;
 import org.rumbledb.types.SequenceType;
+import org.rumbledb.types.SequenceType.Arity;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -202,7 +204,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
     @Override
     public RuntimeIterator visitFlowrExpression(FlworExpression expression, RuntimeIterator argument) {
         RuntimeTupleIterator previous = this.visitFlowrClause(
-            expression.getReturnClause().getChildClause(),
+            expression.getReturnClause().getPreviousClause(),
             argument
         );
         RuntimeIterator runtimeIterator = new ReturnClauseSparkIterator(
@@ -223,8 +225,8 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
             RuntimeIterator argument
     ) {
         RuntimeTupleIterator previousIterator = null;
-        if (clause.getChildClause() != null) {
-            previousIterator = this.visitFlowrClause(clause.getChildClause(), argument);
+        if (clause.getPreviousClause() != null) {
+            previousIterator = this.visitFlowrClause(clause.getPreviousClause(), argument);
         }
         if (clause instanceof ForClause) {
             ForClause forClause = (ForClause) clause;
@@ -308,9 +310,11 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
                     clause.getMetadata()
             );
         } else if (clause instanceof CountClause) {
+            RuntimeIterator variable = this.visit(((CountClause) clause).getCountVariable(), argument);
+            Name variableName = ((AtMostOneItemVariableReferenceIterator) variable).getVariableName();
             return new CountClauseSparkIterator(
                     previousIterator,
-                    this.visit(((CountClause) clause).getCountVariable(), argument),
+                    variableName,
                     clause.getHighestExecutionMode(this.visitorConfig),
                     clause.getMetadata()
             );
@@ -320,12 +324,26 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
 
     @Override
     public RuntimeIterator visitVariableReference(VariableReferenceExpression expression, RuntimeIterator argument) {
-        RuntimeIterator runtimeIterator = new VariableReferenceIterator(
-                expression.getVariableName(),
-                expression.getType(),
-                expression.getHighestExecutionMode(this.visitorConfig),
-                expression.getMetadata()
-        );
+        RuntimeIterator runtimeIterator = null;
+        if (
+            expression.getType().isEmptySequence()
+                || expression.getType().getArity().equals(Arity.One)
+                || expression.getType().getArity().equals(Arity.OneOrZero)
+        ) {
+            runtimeIterator = new AtMostOneItemVariableReferenceIterator(
+                    expression.getVariableName(),
+                    expression.getType(),
+                    expression.getHighestExecutionMode(this.visitorConfig),
+                    expression.getMetadata()
+            );
+        } else {
+            runtimeIterator = new VariableReferenceIterator(
+                    expression.getVariableName(),
+                    expression.getType(),
+                    expression.getHighestExecutionMode(this.visitorConfig),
+                    expression.getMetadata()
+            );
+        }
         runtimeIterator.setStaticContext(expression.getStaticContext());
         return runtimeIterator;
     }

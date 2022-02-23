@@ -31,16 +31,10 @@ import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.OurBadException;
 import org.rumbledb.expressions.ExecutionMode;
-import org.rumbledb.expressions.flowr.FLWOR_CLAUSES;
 import org.rumbledb.items.ItemFactory;
-import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.RuntimeTupleIterator;
-import org.rumbledb.runtime.flwor.FLWORDataFrame;
-import org.rumbledb.runtime.flwor.FLWORSchema;
 import org.rumbledb.runtime.flwor.FlworDataFrameUtils;
 import org.rumbledb.runtime.flwor.udfs.LongSerializeUDF;
-import org.rumbledb.runtime.primary.VariableReferenceIterator;
-import org.rumbledb.types.BuiltinTypesCatalogue;
 
 import sparksoniq.jsoniq.tuple.FlworTuple;
 
@@ -61,12 +55,12 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
 
     public CountClauseSparkIterator(
             RuntimeTupleIterator child,
-            RuntimeIterator variableReference,
+            Name variableName,
             ExecutionMode executionMode,
             ExceptionMetadata iteratorMetadata
     ) {
         super(child, executionMode, iteratorMetadata);
-        this.variableName = ((VariableReferenceIterator) variableReference).getVariableName();
+        this.variableName = variableName;
         this.currentCountIndex = 1; // indices start at 1 in JSONiq
     }
 
@@ -126,25 +120,26 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
     }
 
     @Override
-    public FLWORDataFrame getDataFrame(
-            DynamicContext context
+    public Dataset<Row> getDataFrame(
+            DynamicContext context,
+            Map<Name, DynamicContext.VariableDependency> parentProjection
     ) {
         if (this.child == null) {
             throw new OurBadException("Invalid count clause.");
         }
-        FLWORDataFrame fdf = this.child.getDataFrame(context);
-        if (!this.outputTupleProjection.containsKey(this.variableName)) {
-            return fdf;
+        Dataset<Row> df = this.child.getDataFrame(context, getProjection(parentProjection));
+        if (!parentProjection.containsKey(this.variableName)) {
+            return df;
         }
 
-        FLWORDataFrame dfWithIndex = addSerializedCountColumn(fdf, this.outputTupleProjection, this.variableName);
+        Dataset<Row> dfWithIndex = addSerializedCountColumn(df, parentProjection, this.variableName);
         return dfWithIndex;
     }
 
     // This method, which implements count semantics, is also intended for use by other clauses (e.g., for clause with
     // positional variables).
-    public static FLWORDataFrame addSerializedCountColumn(
-            FLWORDataFrame df,
+    public static Dataset<Row> addSerializedCountColumn(
+            Dataset<Row> df,
             Map<Name, DynamicContext.VariableDependency> outputDependencies,
             Name variableName
     ) {
@@ -159,7 +154,7 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
 
         String selectSQL = FlworDataFrameUtils.getSQLProjection(allColumns, true);
 
-        Dataset<Row> dfWithIndex = FlworDataFrameUtils.zipWithIndex(df.getDataFrame(), 1L, variableName.toString());
+        Dataset<Row> dfWithIndex = FlworDataFrameUtils.zipWithIndex(df, 1L, variableName.toString());
 
         df.sparkSession()
             .udf()
@@ -170,27 +165,22 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
             );
 
         dfWithIndex.createOrReplaceTempView("input");
-        FLWORSchema flworSchema = new FLWORSchema(df.getSchema());
-        flworSchema.setNativeType(variableName, BuiltinTypesCatalogue.longItem);
-        FLWORDataFrame result = new FLWORDataFrame(
-                dfWithIndex.sparkSession()
-                    .sql(
-                        String.format(
-                            "select %s serializeCountIndex(`%s`) as `%s` from input",
-                            selectSQL,
-                            variableName,
-                            variableName
-                        )
-                    ),
-                flworSchema
-        );
-        return result;
+        dfWithIndex = dfWithIndex.sparkSession()
+            .sql(
+                String.format(
+                    "select %s serializeCountIndex(`%s`) as `%s` from input",
+                    selectSQL,
+                    variableName,
+                    variableName
+                )
+            );
+        return dfWithIndex;
     }
 
-    public Map<Name, DynamicContext.VariableDependency> getDynamicContextVariableDependencies() {
+    public Map<Name, DynamicContext.VariableDependency> getVariableDependencies() {
         Map<Name, DynamicContext.VariableDependency> result =
             new TreeMap<Name, DynamicContext.VariableDependency>();
-        result.putAll(this.child.getDynamicContextVariableDependencies());
+        result.putAll(this.child.getVariableDependencies());
         return result;
     }
 
@@ -210,7 +200,7 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
         buffer.append("\n");
     }
 
-    public Map<Name, DynamicContext.VariableDependency> getInputTupleVariableDependencies(
+    public Map<Name, DynamicContext.VariableDependency> getProjection(
             Map<Name, DynamicContext.VariableDependency> parentProjection
     ) {
         // start with an empty projection.
@@ -223,15 +213,5 @@ public class CountClauseSparkIterator extends RuntimeTupleIterator {
         // remove the variable that this clause binds.
         projection.remove(this.variableName);
         return projection;
-    }
-
-    public boolean containsClause(FLWOR_CLAUSES kind) {
-        if (kind == FLWOR_CLAUSES.COUNT) {
-            return true;
-        }
-        if (this.child == null || this.evaluationDepthLimit == 0) {
-            return false;
-        }
-        return this.child.containsClause(kind);
     }
 }
