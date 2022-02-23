@@ -20,22 +20,23 @@
 
 package org.rumbledb.api;
 
-import org.rumbledb.context.FunctionIdentifier;
+import org.joda.time.DateTime;
+import org.joda.time.Period;
 import org.rumbledb.context.Name;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.OurBadException;
 import org.rumbledb.expressions.comparison.ComparisonExpression;
 import org.rumbledb.items.ItemFactory;
-import org.rumbledb.types.FunctionSignature;
+import org.rumbledb.runtime.functions.base.FunctionIdentifier;
+import org.rumbledb.runtime.functions.base.FunctionSignature;
 import org.rumbledb.types.ItemType;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.math.BigDecimal;
-import java.time.Period;
-import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * An instance of this class is an item in the JSONiq data model.
@@ -220,6 +221,15 @@ public abstract class Item implements SerializableItem {
     }
 
     /**
+     * Returns the map represented by the item, if it is an object item.
+     *
+     * @return the map.
+     */
+    public Map<String, Item> getAsMap() {
+        throw new OurBadException(" Item '" + this.serialize() + "' is not an object.");
+    }
+
+    /**
      * Returns the value associated with a specific key, if it is an object item.
      *
      * @param key a key.
@@ -316,7 +326,7 @@ public abstract class Item implements SerializableItem {
      *
      * @return the dateTime value as a DateTime.
      */
-    public ZonedDateTime getDateTimeValue() {
+    public DateTime getDateTimeValue() {
         throw new OurBadException(" Item '" + this.serialize() + "' does not have a DateTime.");
     }
 

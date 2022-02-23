@@ -1,23 +1,25 @@
 package sparksoniq.spark.ml;
 
 import org.apache.spark.ml.Estimator;
-import org.apache.spark.ml.PipelineStage;
 import org.apache.spark.ml.Transformer;
 import org.apache.spark.ml.feature.VectorAssembler;
 import org.apache.spark.ml.param.Param;
 import org.apache.spark.ml.param.ParamMap;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
 import org.rumbledb.api.Item;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.InvalidArgumentTypeException;
 import org.rumbledb.exceptions.InvalidRumbleMLParamException;
 import org.rumbledb.exceptions.OurBadException;
-import org.rumbledb.types.BuiltinTypesCatalogue;
+import org.rumbledb.items.ArrayItem;
+import org.rumbledb.items.AtomicItem;
+import org.rumbledb.types.ItemType;
 import org.rumbledb.items.ItemFactory;
-import org.rumbledb.items.structured.JSoundDataFrame;
-import org.rumbledb.runtime.typing.CastIterator;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public class RumbleMLUtils {
@@ -104,7 +106,7 @@ public class RumbleMLUtils {
             ExceptionMetadata metadata
     ) {
         if (paramJavaTypeName.endsWith("[]")) {
-            if (!(param.isArray())) {
+            if (!(param instanceof ArrayItem)) {
                 throw new InvalidArgumentTypeException(paramName + " is expected to be an array type", metadata);
             }
             List<Object> paramAsListInJava = new ArrayList<>();
@@ -121,18 +123,10 @@ public class RumbleMLUtils {
             });
             return convertArrayListToPrimitiveArray(paramAsListInJava, paramJavaTypeName);
         } else if (expectedJavaTypeMatchesRumbleAtomic(paramJavaTypeName)) {
-            return convertRumbleAtomicToJava(param, paramJavaTypeName);
-        } else if (paramJavaTypeName.equals("PipelineStage")) {
-            if (param.isEstimator()) {
-                return param.getEstimator();
-            }
-            if (param.isTransformer()) {
-                return param.getTransformer();
-            }
-            throw new InvalidArgumentTypeException(paramName + " is expected to be an pipeline stage", metadata);
+            return convertRumbleAtomicToJava((AtomicItem) param, paramJavaTypeName);
         } else {
             // complex SparkML parameters such as Estimator, Transformer, Classifier etc. are not implemented yet
-            throw new OurBadException("We have not implemented parameter support for type " + paramJavaTypeName);
+            throw new OurBadException("Not Implemented");
         }
     }
 
@@ -156,12 +150,6 @@ public class RumbleMLUtils {
                     doubleArray[i] = (Double) paramAsListInJava.get(i);
                 }
                 return doubleArray;
-            case "PipelineStage[]":
-                PipelineStage[] stageArray = new PipelineStage[paramAsListInJava.size()];
-                for (int i = 0; i < stageArray.length; i++) {
-                    stageArray[i] = (PipelineStage) paramAsListInJava.get(i);
-                }
-                return stageArray;
             default:
                 throw new OurBadException("Unhandled case of arrayList to primitive[] conversion found.");
         }
@@ -176,60 +164,18 @@ public class RumbleMLUtils {
             || javaTypeName.equals("long"));
     }
 
-    private static Object convertRumbleAtomicToJava(Item atomicItem, String javaTypeName) {
-        Item castItem;
+    private static Object convertRumbleAtomicToJava(AtomicItem atomicItem, String javaTypeName) {
         switch (javaTypeName) {
             case "boolean":
-                castItem = CastIterator.castItemToType(
-                    atomicItem,
-                    BuiltinTypesCatalogue.booleanItem,
-                    ExceptionMetadata.EMPTY_METADATA
-                );
-                if (castItem == null) {
-                    throw new OurBadException("We were not able to cast " + atomicItem + " to " + javaTypeName);
-                }
-                return castItem.getBooleanValue();
+                return atomicItem.castAs(ItemType.booleanItem).getBooleanValue();
             case "String":
-                castItem = CastIterator.castItemToType(
-                    atomicItem,
-                    BuiltinTypesCatalogue.stringItem,
-                    ExceptionMetadata.EMPTY_METADATA
-                );
-                if (castItem == null) {
-                    throw new OurBadException("We were not able to cast " + atomicItem + " to " + javaTypeName);
-                }
-                return castItem.getStringValue();
+                return atomicItem.castAs(ItemType.stringItem).getStringValue();
             case "int":
-                castItem = CastIterator.castItemToType(
-                    atomicItem,
-                    BuiltinTypesCatalogue.integerItem,
-                    ExceptionMetadata.EMPTY_METADATA
-                );
-                if (castItem == null) {
-                    throw new OurBadException("We were not able to cast " + atomicItem + " to " + javaTypeName);
-                }
-                return castItem.getIntValue();
+                return atomicItem.castAs(ItemType.integerItem).getIntegerValue();
             case "double":
-                castItem = CastIterator.castItemToType(
-                    atomicItem,
-                    BuiltinTypesCatalogue.doubleItem,
-                    ExceptionMetadata.EMPTY_METADATA
-                );
-                if (castItem == null) {
-                    throw new OurBadException("We were not able to cast " + atomicItem + " to " + javaTypeName);
-                }
-                return castItem.getDoubleValue();
+                return atomicItem.castAs(ItemType.doubleItem).getDoubleValue();
             case "long":
-                castItem = CastIterator.castItemToType(
-                    atomicItem,
-                    BuiltinTypesCatalogue.decimalItem,
-                    ExceptionMetadata.EMPTY_METADATA
-                );
-                if (castItem == null) {
-                    throw new OurBadException("We were not able to cast " + atomicItem + " to " + javaTypeName);
-                }
-                return castItem.getDecimalValue()
-                    .longValue();
+                return atomicItem.castAs(ItemType.decimalItem).getDecimalValue().longValue();
             default:
                 throw new OurBadException(
                         "Unrecognized Java type name found \""
@@ -240,16 +186,13 @@ public class RumbleMLUtils {
     }
 
     public static Item removeParameter(Item paramMapItem, String key, ExceptionMetadata metadata) {
-        List<String> keys = paramMapItem.getKeys();
-        List<Item> values = paramMapItem.getValues();
-        int indexToRemove = keys.indexOf(key);
-        keys.remove(indexToRemove);
-        values.remove(indexToRemove);
-        return ItemFactory.getInstance().createObjectItem(keys, values, metadata);
+        LinkedHashMap<String, Item> newContent = new LinkedHashMap<>(paramMapItem.getAsMap());
+        newContent.remove(key);
+        return ItemFactory.getInstance().createObjectItem(newContent);
     }
 
-    public static JSoundDataFrame createDataFrameContainingVectorizedColumn(
-            JSoundDataFrame inputDataset,
+    public static Dataset<Row> createDataFrameContainingVectorizedColumn(
+            Dataset<Row> inputDataset,
             String paramNameExposedToTheUser,
             String[] arrayOfInputColumnNames,
             String outputColumnName,
@@ -260,10 +203,7 @@ public class RumbleMLUtils {
         vectorAssembler.setOutputCol(outputColumnName);
 
         try {
-            return new JSoundDataFrame(
-                    vectorAssembler.transform(inputDataset.getDataFrame()),
-                    BuiltinTypesCatalogue.objectItem
-            );
+            return vectorAssembler.transform(inputDataset);
         } catch (IllegalArgumentException e) {
             throw new InvalidRumbleMLParamException(
                     "Parameter provided to "

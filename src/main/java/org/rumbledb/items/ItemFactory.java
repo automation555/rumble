@@ -1,11 +1,10 @@
 package org.rumbledb.items;
 
-import java.time.ZonedDateTime;
-import java.time.Period;
+import org.joda.time.DateTime;
+import org.joda.time.Period;
 import org.rumbledb.api.Item;
-import org.rumbledb.exceptions.ExceptionMetadata;
-
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -67,7 +66,7 @@ public class ItemFactory {
         return new DayTimeDurationItem(p);
     }
 
-    public Item createDateTimeItem(ZonedDateTime dt, boolean hasTimeZone) {
+    public Item createDateTimeItem(DateTime dt, boolean hasTimeZone) {
         return new DateTimeItem(dt, hasTimeZone);
     }
 
@@ -75,7 +74,7 @@ public class ItemFactory {
         return new DateTimeItem(s);
     }
 
-    public Item createDateItem(ZonedDateTime dt, boolean hasTimeZone) {
+    public Item createDateItem(DateTime dt, boolean hasTimeZone) {
         return new DateItem(dt, hasTimeZone);
     }
 
@@ -115,8 +114,8 @@ public class ItemFactory {
         return new ArrayItem(items);
     }
 
-    public Item createObjectItem(List<String> keys, List<Item> values, ExceptionMetadata itemMetadata) {
-        return new ObjectItem(keys, values, itemMetadata);
+    public Item createObjectItem(LinkedHashMap<String, Item> content) {
+        return new ObjectItem(content);
     }
 
     public Item createObjectItem(Map<String, List<Item>> keyValuePairs) {

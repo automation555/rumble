@@ -35,8 +35,6 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.DecimalType;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.bson.Document;
-import org.bson.types.ObjectId;
 import org.joda.time.DateTime;
 import org.rumbledb.api.Item;
 import org.rumbledb.exceptions.ExceptionMetadata;
@@ -51,16 +49,12 @@ import sparksoniq.spark.SparkSessionManager;
 import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
-import java.util.Date;
+import java.sql.Date;
 import java.sql.Timestamp;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 public class ItemParser implements Serializable {
 
@@ -79,10 +73,14 @@ public class ItemParser implements Serializable {
                 if (number.contains("E") || number.contains("e")) {
                     return ItemFactory.getInstance().createDoubleItem(Double.parseDouble(number));
                 }
-                if (number.contains(".")) {
+                if (number.contains(".") || number.length() >= 12) {
                     return ItemFactory.getInstance().createDecimalItem(new BigDecimal(number));
                 }
-                return ItemFactory.getInstance().createIntegerItem(number);
+                try {
+                    return ItemFactory.getInstance().createIntegerItem(Integer.parseInt(number));
+                } catch (NumberFormatException e) {
+                    return ItemFactory.getInstance().createDecimalItem(new BigDecimal(number));
+                }
             }
             if (object.whatIsNext().equals(ValueType.BOOLEAN)) {
                 return ItemFactory.getInstance().createBooleanItem(object.readBoolean());
@@ -95,15 +93,13 @@ public class ItemParser implements Serializable {
                 return ItemFactory.getInstance().createArrayItem(values);
             }
             if (object.whatIsNext().equals(ValueType.OBJECT)) {
-                List<String> keys = new ArrayList<>();
-                List<Item> values = new ArrayList<>();
+                LinkedHashMap<String, Item> content = new LinkedHashMap<>();
                 String s;
                 while ((s = object.readObject()) != null) {
-                    keys.add(s);
-                    values.add(getItemFromObject(object, metadata));
+                    content.put(s, getItemFromObject(object, metadata));
                 }
                 return ItemFactory.getInstance()
-                    .createObjectItem(keys, values, metadata);
+                    .createObjectItem(content);
             }
             if (object.whatIsNext().equals(ValueType.NULL)) {
                 object.readNull();
@@ -119,27 +115,24 @@ public class ItemParser implements Serializable {
     }
 
     public static Item getItemFromRow(Row row, ExceptionMetadata metadata) {
-        List<String> keys = new ArrayList<>();
-        List<Item> values = new ArrayList<>();
         StructType schema = row.schema();
         StructField[] fields = schema.fields();
+        LinkedHashMap<String, Item> content = new LinkedHashMap<>(fields.length, 1);
         String[] fieldnames = schema.fieldNames();
 
         for (int i = 0; i < fields.length; ++i) {
             StructField field = fields[i];
             DataType fieldType = field.dataType();
-            keys.add(field.name());
-            Item newItem = addValue(row, i, null, fieldType, metadata);
-            values.add(newItem);
+            content.put(field.name(), getValue(row, i, null, fieldType, metadata));
         }
 
         if (fields.length == 1 && fieldnames[0].equals(SparkSessionManager.atomicJSONiqItemColumnName)) {
-            return values.get(0);
+            return content.get(fieldnames[0]);
         }
-        return ItemFactory.getInstance().createObjectItem(keys, values, metadata);
+        return ItemFactory.getInstance().createObjectItem(content);
     }
 
-    private static Item addValue(
+    private static Item getValue(
             Row row,
             int i,
             Object o,
@@ -179,7 +172,7 @@ public class ItemParser implements Serializable {
             } else {
                 value = (Integer) o;
             }
-            return ItemFactory.getInstance().createIntItem(value);
+            return ItemFactory.getInstance().createIntegerItem(value);
         } else if (fieldType.equals(DataTypes.FloatType)) {
             float value;
             if (row != null) {
@@ -213,7 +206,7 @@ public class ItemParser implements Serializable {
             } else {
                 value = (Short) o;
             }
-            return ItemFactory.getInstance().createIntItem(value);
+            return ItemFactory.getInstance().createIntegerItem(value);
         } else if (fieldType.equals(DataTypes.TimestampType)) {
             Timestamp value;
             if (row != null) {
@@ -253,18 +246,20 @@ public class ItemParser implements Serializable {
         } else if (fieldType instanceof ArrayType) {
             ArrayType arrayType = (ArrayType) fieldType;
             DataType dataType = arrayType.elementType();
-            List<Item> members = new ArrayList<>();
+            List<Item> members = null;
             if (row != null) {
                 List<Object> objects = row.getList(i);
+                members = new ArrayList<>(objects.size());
                 for (Object object : objects) {
-                    members.add(addValue(null, 0, object, dataType, metadata));
+                    members.add(getValue(null, 0, object, dataType, metadata));
                 }
             } else {
                 @SuppressWarnings("unchecked")
                 Object arrayObject = ((WrappedArray<Object>) o).array();
+                members = new ArrayList<>(Array.getLength(arrayObject));
                 for (int index = 0; index < Array.getLength(arrayObject); index++) {
                     Object value = Array.get(arrayObject, index);
-                    members.add(addValue(null, 0, value, dataType, metadata));
+                    members.add(getValue(null, 0, value, dataType, metadata));
                 }
             }
             return ItemFactory.getInstance().createArrayItem(members);
@@ -286,15 +281,16 @@ public class ItemParser implements Serializable {
             } else if (vector instanceof SparseVector) {
                 // a sparse vector is mapped to a Rumble object where keys are indices of the non-0 values in the vector
                 SparseVector sparseVector = (SparseVector) vector;
-                List<String> objectKeyList = new ArrayList<>();
-                List<Item> objectValueList = new ArrayList<>();
                 int[] vectorIndices = sparseVector.indices();
+                LinkedHashMap<String, Item> objectContent = new LinkedHashMap<>(vectorIndices.length, 1);
                 double[] vectorValues = sparseVector.values();
                 for (int j = 0; j < vectorIndices.length; j++) {
-                    objectKeyList.add(String.valueOf(vectorIndices[j]));
-                    objectValueList.add(ItemFactory.getInstance().createDoubleItem(vectorValues[j]));
+                    objectContent.put(
+                        String.valueOf(vectorIndices[j]),
+                        ItemFactory.getInstance().createDoubleItem(vectorValues[j])
+                    );
                 }
-                return ItemFactory.getInstance().createObjectItem(objectKeyList, objectValueList, metadata);
+                return ItemFactory.getInstance().createObjectItem(objectContent);
             } else {
                 throw new OurBadException("Unexpected program state reached while converting vectorUDT to rumble item");
             }
@@ -432,7 +428,7 @@ public class ItemParser implements Serializable {
                 return item.getBooleanValue();
             }
             if (dataType.equals(DataTypes.IntegerType)) {
-                return item.castToIntValue();
+                return item.castToIntegerValue();
             }
             if (dataType.equals(DataTypes.DoubleType)) {
                 return item.castToDoubleValue();
@@ -463,67 +459,5 @@ public class ItemParser implements Serializable {
         throw new OurBadException(
                 "Unhandled item type found while generating rows: '" + dataType + "' ."
         );
-    }
-    
-    public static Item getItemFromBSON(Object object, ExceptionMetadata metadata)
-    {
-        if(object instanceof Document)
-        {
-            Document document = (Document) object;
-            Map<String, List<Item>> map = new HashMap<>();
-            for(String key : document.keySet()) {
-                Item value = getItemFromBSON(document.get(key), metadata);
-                map.put(key, Collections.singletonList(value));
-            }
-            return ItemFactory.getInstance().createObjectItem(map);
-        }
-        if(object instanceof ArrayList<?>)
-        {
-            ArrayList<?> arrayList = (ArrayList<?>) object;
-            List<Item> items = new ArrayList<>();
-            for(Object o : arrayList)
-            {
-                items.add(getItemFromBSON(o, metadata));
-            }
-            return ItemFactory.getInstance().createArrayItem(items);
-        }
-        if(object instanceof String)
-        {
-            return ItemFactory.getInstance().createStringItem((String)object);
-        }
-        if(object instanceof Long)
-        {
-            return ItemFactory.getInstance().createLongItem(((Long)object).longValue());
-        }
-        if(object instanceof Integer)
-        {
-            return ItemFactory.getInstance().createIntItem(((Integer)object).intValue());
-        }
-        if(object instanceof Boolean)
-        {
-            return ItemFactory.getInstance().createBooleanItem(((Boolean)object).booleanValue());
-        }
-        if(object instanceof ObjectId)
-        {
-            ObjectId id = (ObjectId) object;
-            return ItemFactory.getInstance().createStringItem(id.toHexString());
-        }
-        if(object instanceof Double)
-        {
-            return ItemFactory.getInstance().createDoubleItem(((Double)object).doubleValue());
-        }
-        if(object instanceof Date)
-        {
-            Date d = (Date) object;
-            DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");  
-            String date = dateFormat.format(d);
-            return ItemFactory.getInstance().createDateItem(date);
-        }
-        if(object == null)
-        {
-            return ItemFactory.getInstance().createNullItem();
-        }
-        throw new OurBadException(
-            "Unhandled BSON type found while generating rows: '" + object.getClass().getCanonicalName() + ".", metadata);
     }
 }

@@ -24,13 +24,13 @@ import org.rumbledb.api.Item;
 import org.rumbledb.context.DynamicContext;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.IteratorFlowException;
-import org.rumbledb.expressions.ExecutionMode;
 import org.rumbledb.items.ItemFactory;
 import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.functions.base.LocalFunctionCallIterator;
+import sparksoniq.jsoniq.ExecutionMode;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -59,12 +59,6 @@ public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIter
         this.nextResults = new LinkedList<>();
 
         setNextResult();
-    }
-
-    @Override
-    public void close() {
-        super.close();
-        this.iterator.close();
     }
 
     @Override
@@ -97,6 +91,7 @@ public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIter
 
         if (this.nextResults.isEmpty()) {
             this.hasNext = false;
+            this.iterator.close();
         } else {
             this.hasNext = true;
         }
@@ -111,13 +106,13 @@ public class ObjectDescendantPairsFunctionIterator extends LocalFunctionCallIter
                 for (String key : keys) {
                     Item value = item.getItemByKey(key);
 
-                    List<String> keyList = Collections.singletonList(key);
-                    List<Item> valueList = Collections.singletonList(value);
+                    LinkedHashMap<String, Item> content = new LinkedHashMap<>();
+                    content.put(key, value);
 
                     Item result = ItemFactory.getInstance()
-                        .createObjectItem(keyList, valueList, getMetadata());
+                        .createObjectItem(content);
                     this.nextResults.add(result);
-                    getDescendantPairs(valueList);
+                    getDescendantPairs(new ArrayList<Item>(content.values()));
                 }
             } else {
                 // do nothing

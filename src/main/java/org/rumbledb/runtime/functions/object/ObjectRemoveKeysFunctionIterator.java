@@ -28,12 +28,14 @@ import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.InvalidSelectorException;
 import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.UnexpectedTypeException;
-import org.rumbledb.expressions.ExecutionMode;
 import org.rumbledb.items.ItemFactory;
 import org.rumbledb.runtime.HybridRuntimeIterator;
 import org.rumbledb.runtime.RuntimeIterator;
 
+import sparksoniq.jsoniq.ExecutionMode;
+
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public class ObjectRemoveKeysFunctionIterator extends HybridRuntimeIterator {
@@ -106,23 +108,22 @@ public class ObjectRemoveKeysFunctionIterator extends HybridRuntimeIterator {
 
         if (this.nextResult == null) {
             this.hasNext = false;
+            this.iterator.close();
         } else {
             this.hasNext = true;
         }
     }
 
     private Item removeKeys(Item objItem, List<String> removalKeys) {
-        ArrayList<String> finalKeylist = new ArrayList<>();
-        ArrayList<Item> finalValueList = new ArrayList<>();
+        LinkedHashMap<String, Item> finalContent = new LinkedHashMap<>();
 
         for (String objectKey : objItem.getKeys()) {
             if (!removalKeys.contains(objectKey)) {
-                finalKeylist.add(objectKey);
-                finalValueList.add(objItem.getItemByKey(objectKey));
+                finalContent.put(objectKey, objItem.getItemByKey(objectKey));
             }
         }
         return ItemFactory.getInstance()
-            .createObjectItem(finalKeylist, finalValueList, getMetadata());
+            .createObjectItem(finalContent);
     }
 
     @Override
@@ -131,7 +132,7 @@ public class ObjectRemoveKeysFunctionIterator extends HybridRuntimeIterator {
     }
 
     @Override
-    protected void resetLocal() {
+    protected void resetLocal(DynamicContext context) {
         startLocal();
     }
 
@@ -143,7 +144,7 @@ public class ObjectRemoveKeysFunctionIterator extends HybridRuntimeIterator {
     @Override
     public JavaRDD<Item> getRDDAux(DynamicContext context) {
         JavaRDD<Item> childRDD = this.iterator.getRDD(context);
-        List<Item> removalKeys = this.children.get(1).materialize(context);
+        List<Item> removalKeys = this.children.get(1).materialize(this.currentDynamicContextForLocalExecution);
         if (removalKeys.isEmpty()) {
             throw new InvalidSelectorException(
                     "Invalid Key Removal Parameter; Object key removal can't be performed with zero keys: ",
@@ -160,8 +161,7 @@ public class ObjectRemoveKeysFunctionIterator extends HybridRuntimeIterator {
             this.removalKeys.add(removalKey);
         }
         FlatMapFunction<Item, Item> transformation = new ObjectRemoveKeysClosure(
-                this.removalKeys,
-                getMetadata()
+                this.removalKeys
         );
         return childRDD.flatMap(transformation);
     }
