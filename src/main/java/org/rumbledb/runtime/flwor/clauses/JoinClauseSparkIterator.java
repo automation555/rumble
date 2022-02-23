@@ -33,7 +33,7 @@ import org.rumbledb.expressions.flowr.FLWOR_CLAUSES;
 import org.rumbledb.runtime.CommaExpressionIterator;
 import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.RuntimeTupleIterator;
-import org.rumbledb.runtime.flwor.FlworDataFrameColumn;
+import org.rumbledb.runtime.flwor.FLWORDataFrame;
 import org.rumbledb.runtime.flwor.FlworDataFrameUtils;
 import org.rumbledb.runtime.flwor.NativeClauseContext;
 import org.rumbledb.runtime.flwor.udfs.DataFrameContext;
@@ -107,10 +107,10 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
      * @param metadata the metadata.
      * @return the joined tuple.
      */
-    public static Dataset<Row> joinInputTupleWithSequenceOnPredicate(
+    public static FLWORDataFrame joinInputTupleWithSequenceOnPredicate(
             DynamicContext context,
-            Dataset<Row> leftInputTuple,
-            Dataset<Row> rightInputTuple,
+            FLWORDataFrame leftInputTuple,
+            FLWORDataFrame rightInputTuple,
             Map<Name, DynamicContext.VariableDependency> outputTupleVariableDependencies,
             List<Name> variablesInLeftInputTuple, // really needed?
             List<Name> variablesInRightInputTuple, // really needed?
@@ -119,7 +119,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
             Name newRightSideVariableName, // really needed?
             ExceptionMetadata metadata
     ) {
-        Dataset<Row> result = tryNativeQueryStatically(
+        FLWORDataFrame result = tryNativeQueryStatically(
             context,
             leftInputTuple,
             rightInputTuple,
@@ -253,8 +253,8 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
 
 
         // Now we prepare the two views that we want to compute the Cartesian product of.
-        leftInputDFTableName = FlworDataFrameUtils.createTempView(leftInputTuple);
-        rightInputDFTableName = FlworDataFrameUtils.createTempView(rightInputTuple);
+        leftInputTuple.createOrReplaceTempView(leftInputDFTableName);
+        rightInputTuple.createOrReplaceTempView(rightInputDFTableName);
 
         StructType leftSchema = leftInputTuple.schema();
         StructType rightSchema = rightInputTuple.schema();
@@ -263,7 +263,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
         // We gather the columns to select from the previous clause.
         // We need to project away the clause's variables from the previous clause.
         // One variable gets renamed. We need to remove it from the projection.
-        List<FlworDataFrameColumn> columnsToSelect = FlworDataFrameUtils.getColumns(
+        List<String> columnsToSelect = FlworDataFrameUtils.getColumnNames(
             jointSchema,
             outputTupleVariableDependencies,
             null,
@@ -271,7 +271,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
                 ? Collections.singletonList(newRightSideVariableName)
                 : Collections.emptyList()
         );
-        String projectionVariables = FlworDataFrameUtils.getSQLColumnProjection(
+        String projectionVariables = FlworDataFrameUtils.getSQLProjection(
             columnsToSelect,
             newRightSideVariableName != null
         );
@@ -296,7 +296,8 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
         );
 
         // Now we need to register or join predicate as a UDF.
-        leftInputTuple.sparkSession()
+        leftInputTuple.getDataFrame()
+            .sparkSession()
             .udf()
             .register(
                 "joinUDF",
@@ -318,7 +319,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
                         UDFParameters
                     )
                 );
-            return resultDF;
+            return new FLWORDataFrame(resultDF);
         }
 
         if (optimizableJoin) {
@@ -335,7 +336,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
                         UDFParameters
                     )
                 );
-            return resultDF;
+            return new FLWORDataFrame(resultDF);
         }
         // Otherwise, it's a regular join.
         Dataset<Row> resultDF = leftInputTuple.sparkSession()
@@ -348,7 +349,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
                     UDFParameters
                 )
             );
-        return resultDF;
+        return new FLWORDataFrame(resultDF);
     }
 
     private static boolean extractEqualityComparisonsForHashing(
@@ -410,7 +411,7 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
     }
 
     @Override
-    public Dataset<Row> getDataFrame(DynamicContext context) {
+    public FLWORDataFrame getDataFrame(DynamicContext context) {
         // TODO Auto-generated method stub
         return null;
     }
@@ -439,10 +440,10 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
      * @param context current dynamic context of the dataframe
      * @return resulting dataframe of the group by clause if successful, null otherwise
      */
-    private static Dataset<Row> tryNativeQueryStatically(
+    private static FLWORDataFrame tryNativeQueryStatically(
             DynamicContext context,
-            Dataset<Row> leftInputTuple,
-            Dataset<Row> rightInputTuple,
+            FLWORDataFrame leftInputTuple,
+            FLWORDataFrame rightInputTuple,
             Map<Name, DynamicContext.VariableDependency> outputTupleVariableDependencies,
             RuntimeIterator predicateIterator,
             boolean isLeftOuterJoin,
@@ -464,30 +465,31 @@ public class JoinClauseSparkIterator extends RuntimeTupleIterator {
             return null;
         }
         System.err.println(
-            "[INFO] Rumble was able to optimize a join to a native SQL query."
+            "[INFO] Rumble was able to optimize a join to a native SQL query: "
+                + nativeQuery.getResultingQuery()
         );
-        String left = FlworDataFrameUtils.createTempView(leftInputTuple);
-        String right = FlworDataFrameUtils.createTempView(rightInputTuple);
-        List<FlworDataFrameColumn> columnsToSelect = FlworDataFrameUtils.getColumns(
+        leftInputTuple.createOrReplaceTempView("left");
+        rightInputTuple.createOrReplaceTempView("right");
+        List<String> columnsToSelect = FlworDataFrameUtils.getColumnNames(
             unionSchema,
             outputTupleVariableDependencies,
             null,
             Collections.emptyList()
         );
-        String projectionVariables = FlworDataFrameUtils.getSQLColumnProjection(
+        String projectionVariables = FlworDataFrameUtils.getSQLProjection(
             columnsToSelect,
             newRightSideVariableName != null
         );
-        return leftInputTuple.sparkSession()
-            .sql(
-                String.format(
-                    "SELECT %s FROM %s JOIN %s ON %s",
-                    projectionVariables,
-                    left,
-                    right,
-                    nativeQuery.getResultingQuery()
-                )
-            );
+        return new FLWORDataFrame(
+                leftInputTuple.sparkSession()
+                    .sql(
+                        String.format(
+                            "SELECT %s FROM left JOIN right ON %s",
+                            projectionVariables,
+                            nativeQuery.getResultingQuery()
+                        )
+                    )
+        );
     }
 
 }
