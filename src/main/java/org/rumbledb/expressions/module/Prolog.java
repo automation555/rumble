@@ -21,7 +21,6 @@
 package org.rumbledb.expressions.module;
 
 
-import org.rumbledb.context.Name;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.expressions.AbstractNodeVisitor;
 import org.rumbledb.expressions.Node;
@@ -32,6 +31,7 @@ import java.util.stream.Collectors;
 
 public class Prolog extends Node {
 
+    private static final long serialVersionUID = 1L;
     private List<Node> declarations;
     private List<LibraryModule> importedModules;
 
@@ -77,25 +77,8 @@ public class Prolog extends Node {
             .collect(Collectors.toList());
     }
 
-    public boolean hasContextItemDeclaration() {
-        for (Node d : this.declarations) {
-            if (!(d instanceof VariableDeclaration)) {
-                continue;
-            }
-            VariableDeclaration vd = (VariableDeclaration) d;
-            if (vd.getVariableName().equals(Name.CONTEXT_ITEM)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public void setDeclarations(List<Node> declarations) {
         this.declarations = declarations;
-    }
-
-    public void addDeclaration(Node declaration) {
-        this.declarations.add(declaration);
     }
 
     public void clearDeclarations() {

@@ -26,20 +26,25 @@ import org.rumbledb.context.DynamicContext;
 import org.rumbledb.context.FunctionIdentifier;
 import org.rumbledb.context.Name;
 import org.rumbledb.exceptions.ExceptionMetadata;
+import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.OurBadException;
+import org.rumbledb.exceptions.UnexpectedTypeException;
 import org.rumbledb.expressions.ExecutionMode;
 import org.rumbledb.items.FunctionItem;
-import org.rumbledb.runtime.AtMostOneItemLocalRuntimeIterator;
 import org.rumbledb.runtime.RuntimeIterator;
+import org.rumbledb.runtime.functions.base.LocalFunctionCallIterator;
+import org.rumbledb.types.BuiltinTypesCatalogue;
 import org.rumbledb.types.FunctionSignature;
 import org.rumbledb.types.SequenceType;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public class GetEstimatorFunctionIterator extends AtMostOneItemLocalRuntimeIterator {
+public class GetEstimatorFunctionIterator extends LocalFunctionCallIterator {
 
     private static final long serialVersionUID = 1L;
     public static final List<Name> estimatorFunctionParameterNames = new ArrayList<>(
@@ -52,6 +57,8 @@ public class GetEstimatorFunctionIterator extends AtMostOneItemLocalRuntimeItera
                 )
             )
     );
+    private String estimatorShortName;
+    private Class<?> estimatorSparkMLClass;
 
     public GetEstimatorFunctionIterator(
             List<RuntimeIterator> arguments,
@@ -62,87 +69,105 @@ public class GetEstimatorFunctionIterator extends AtMostOneItemLocalRuntimeItera
     }
 
     @Override
-    public Item materializeFirstItemOrNull(
-            DynamicContext dynamicContext
-    ) {
-        String estimatorShortName = this.children.get(0).materializeFirstItemOrNull(dynamicContext).getStringValue();
-        Item paramMapItem = null;
-        if (this.children.size() >= 2) {
-            paramMapItem = this.children.get(1).materializeFirstItemOrNull(dynamicContext);
+    public void open(DynamicContext context) {
+        super.open(context);
+
+        RuntimeIterator nameIterator = this.children.get(0);
+        nameIterator.open(context);
+        if (!nameIterator.hasNext()) {
+            throw new UnexpectedTypeException(
+                    "Invalid args. Estimator lookup can't be performed with empty sequence as the transformer name",
+                    getMetadata()
+            );
         }
+        this.estimatorShortName = nameIterator.next().getStringValue();
+        if (nameIterator.hasNext()) {
+            throw new UnexpectedTypeException(
+                    "Estimator lookup can't be performed on a sequence.",
+                    getMetadata()
+            );
+        }
+        nameIterator.close();
 
         String estimatorFullClassName = RumbleMLCatalog.getEstimatorFullClassName(
-            estimatorShortName,
+            this.estimatorShortName,
             getMetadata()
         );
-
-        Class<?> estimatorSparkMLClass = null;
         try {
-            estimatorSparkMLClass = Class.forName(estimatorFullClassName);
+            this.estimatorSparkMLClass = Class.forName(estimatorFullClassName);
+            this.hasNext = true;
         } catch (ClassNotFoundException e) {
             throw new OurBadException(
-                    estimatorShortName
-                        + ": we could not find any estimator with that name. Please check the documentation."
+                    "No SparkML estimator implementation found with the given full class name."
             );
         }
+    }
 
-        try {
-            Estimator<?> estimator = (Estimator<?>) estimatorSparkMLClass.newInstance();
+    @Override
+    public Item next() {
+        if (this.hasNext) {
+            this.hasNext = false;
+            try {
+                Estimator<?> estimator = (Estimator<?>) this.estimatorSparkMLClass.newInstance();
+                Map<Long, RuntimeIterator> bodyIterators = new HashMap<>();
+                bodyIterators.put(
+                    0L,
+                    new ApplyEstimatorRuntimeIterator(
+                            this.estimatorShortName,
+                            estimator,
+                            ExecutionMode.LOCAL,
+                            getMetadata()
+                    )
+                );
+                bodyIterators.put(
+                    1L,
+                    new ApplyEstimatorRuntimeIterator(
+                            this.estimatorShortName,
+                            estimator,
+                            ExecutionMode.DATAFRAME,
+                            getMetadata()
+                    )
+                );
+                List<SequenceType> paramTypes = Collections.unmodifiableList(
+                    Arrays.asList(
+                        new SequenceType(
+                                BuiltinTypesCatalogue.item, // TODO: revert back to ObjectItem
+                                SequenceType.Arity.ZeroOrMore
+                        ),
+                        new SequenceType(
+                                BuiltinTypesCatalogue.objectItem,
+                                SequenceType.Arity.One
+                        )
+                    )
+                );
+                SequenceType returnType = new SequenceType(
+                        BuiltinTypesCatalogue.anyFunctionItem,
+                        SequenceType.Arity.One
+                );
 
-            if (paramMapItem != null) {
-                for (int paramIndex = 0; paramIndex < paramMapItem.getKeys().size(); paramIndex++) {
-                    String paramName = paramMapItem.getKeys().get(paramIndex);
-                    Item paramValue = paramMapItem.getValues().get(paramIndex);
+                return new FunctionItem(
+                        new FunctionIdentifier(
+                                Name.createVariableInDefaultFunctionNamespace(
+                                    this.estimatorSparkMLClass.getName()
+                                ),
+                                2
+                        ),
+                        estimatorFunctionParameterNames,
+                        new FunctionSignature(
+                                paramTypes,
+                                returnType
+                        ),
+                        new DynamicContext(this.currentDynamicContextForLocalExecution.getRumbleRuntimeConfiguration()),
+                        bodyIterators
+                );
 
-                    RumbleMLCatalog.validateEstimatorParameterByName(estimatorShortName, paramName, getMetadata());
-
-                    String paramJavaTypeName = RumbleMLCatalog.getJavaTypeNameOfParamByName(paramName, getMetadata());
-                    Object paramValueInJava = RumbleMLUtils.convertParamItemToJava(
-                        paramName,
-                        paramValue,
-                        paramJavaTypeName,
-                        getMetadata()
-                    );
-
-                    estimator.set(paramName, paramValueInJava);
-                }
+            } catch (InstantiationException | IllegalAccessException e) {
+                throw new OurBadException("Error while generating an instance from transformer class.", getMetadata());
             }
-
-            RuntimeIterator bodyIterator = new ApplyEstimatorRuntimeIterator(
-                    estimatorShortName,
-                    estimator,
-                    ExecutionMode.LOCAL,
-                    getMetadata()
-            );
-            List<SequenceType> paramTypes = Collections.unmodifiableList(
-                Arrays.asList(
-                    SequenceType.createSequenceType("object*"),
-                    SequenceType.createSequenceType("object")
-                )
-            );
-            SequenceType returnType = SequenceType.createSequenceType("function(object*, object) as object*");
-
-            return new FunctionItem(
-                    new FunctionIdentifier(
-                            Name.createVariableInDefaultFunctionNamespace(
-                                estimatorSparkMLClass.getName()
-                            ),
-                            2
-                    ),
-                    estimatorFunctionParameterNames,
-                    new FunctionSignature(
-                            paramTypes,
-                            returnType
-                    ),
-                    new DynamicContext(dynamicContext.getRumbleRuntimeConfiguration()),
-                    bodyIterator
-            );
-
-        } catch (InstantiationException | IllegalAccessException e) {
-            throw new OurBadException(
-                    "Error while generating an instance from the estimator class " + estimatorFullClassName,
-                    getMetadata()
-            );
         }
+        throw new IteratorFlowException(
+                RuntimeIterator.FLOW_EXCEPTION_MESSAGE + "get-transformer function",
+                getMetadata()
+        );
     }
 }

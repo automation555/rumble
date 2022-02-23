@@ -20,11 +20,9 @@
 
 package org.rumbledb.expressions;
 
-
 import org.rumbledb.context.StaticContext;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.types.SequenceType;
-import org.rumbledb.types.SequenceType.Arity;
 
 /**
  * An expression is the first-class citizen in JSONiq syntax. Any expression
@@ -38,9 +36,10 @@ import org.rumbledb.types.SequenceType.Arity;
  */
 public abstract class Expression extends Node {
 
-    protected StaticContext staticContext;
+    private static final long serialVersionUID = 1L;
+    protected transient StaticContext staticContext;
 
-    protected SequenceType staticSequenceType;
+    protected SequenceType inferredSequenceType;
 
     protected Expression(ExceptionMetadata metadata) {
         super(metadata);
@@ -70,32 +69,18 @@ public abstract class Expression extends Node {
      * 
      * @return the statically inferred sequence type.
      */
-    public SequenceType getStaticSequenceType() {
-        return this.staticSequenceType;
-    }
-
-    /**
-     * Tells whether this expression is guaranteed to return
-     * zero or one item but not more.
-     *
-     * @return true if yes, false otherwise.
-     */
-    public boolean alwaysReturnsAtMostOneItem() {
-        return this.staticSequenceType.getArity().equals(Arity.One)
-            ||
-            this.staticSequenceType.getArity().equals(Arity.OneOrZero)
-            ||
-            this.staticSequenceType.getArity().equals(Arity.Zero);
+    public SequenceType getInferredSequenceType() {
+        return this.inferredSequenceType;
     }
 
     /**
      * Sets the inferred static type, for used by the static
      * analysis visitor.
      * 
-     * @param staticSequenceType the statically inferred sequence type to set.
+     * @param inferredSequenceType the statically inferred sequence type to set.
      */
-    public void setStaticSequenceType(SequenceType staticSequenceType) {
-        this.staticSequenceType = staticSequenceType;
+    public void setInferredSequenceType(SequenceType inferredSequenceType) {
+        this.inferredSequenceType = inferredSequenceType;
     }
 
     @Override
@@ -105,13 +90,7 @@ public abstract class Expression extends Node {
         }
         buffer.append(getClass().getSimpleName());
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(
-            " | "
-                + (this.staticSequenceType == null
-                    ? "not set"
-                    : this.staticSequenceType
-                        + (this.staticSequenceType.isResolved() ? " (resolved)" : " (unresolved)"))
-        );
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);

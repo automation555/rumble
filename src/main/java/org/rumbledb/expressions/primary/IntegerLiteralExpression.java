@@ -31,6 +31,7 @@ import org.rumbledb.expressions.Node;
 
 public class IntegerLiteralExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
     private String lexicalValue;
 
     public IntegerLiteralExpression(String lexicalValue, ExceptionMetadata metadata) {
@@ -59,7 +60,7 @@ public class IntegerLiteralExpression extends Expression {
         buffer.append(getClass().getSimpleName());
         buffer.append(" (" + (this.lexicalValue) + ") ");
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);

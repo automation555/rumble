@@ -32,6 +32,7 @@ import java.util.List;
 
 public class NamedFunctionReferenceExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
     private final FunctionIdentifier identifier;
 
     public NamedFunctionReferenceExpression(FunctionIdentifier identifier, ExceptionMetadata metadata) {
@@ -60,7 +61,7 @@ public class NamedFunctionReferenceExpression extends Expression {
         }
         buffer.append(getClass().getSimpleName());
         buffer.append(" (" + this.identifier.getName() + "#" + this.identifier.getArity() + ") ");
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
     }
 

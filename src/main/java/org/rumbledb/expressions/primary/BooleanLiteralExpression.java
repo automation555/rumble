@@ -31,6 +31,8 @@ import org.rumbledb.expressions.Node;
 
 public class BooleanLiteralExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
+
     private boolean value;
 
     public BooleanLiteralExpression(boolean value, ExceptionMetadata metadata) {
@@ -59,7 +61,7 @@ public class BooleanLiteralExpression extends Expression {
         buffer.append(getClass().getSimpleName());
         buffer.append(" (" + (this.value) + ") ");
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);

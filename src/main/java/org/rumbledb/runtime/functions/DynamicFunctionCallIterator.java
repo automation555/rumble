@@ -25,7 +25,6 @@ import org.rumbledb.api.Item;
 import org.rumbledb.context.DynamicContext;
 import org.rumbledb.context.NamedFunctions;
 import org.rumbledb.exceptions.ExceptionMetadata;
-import org.rumbledb.exceptions.InvalidRumbleMLParamException;
 import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.MoreThanOneItemException;
 import org.rumbledb.exceptions.OurBadException;
@@ -49,7 +48,6 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
     // calculated fields
     private Item functionItem;
     private RuntimeIterator functionCallIterator;
-    private boolean isPartialApplication;
     private Item nextResult;
 
     public DynamicFunctionCallIterator(
@@ -59,12 +57,9 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
             ExceptionMetadata iteratorMetadata
     ) {
         super(null, executionMode, iteratorMetadata);
-        this.isPartialApplication = false;
         for (RuntimeIterator arg : functionArguments) {
             if (arg != null) {
                 this.children.add(arg);
-            } else {
-                this.isPartialApplication = true;
             }
         }
         if (!this.children.contains(functionItemIterator)) {
@@ -77,12 +72,7 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
     @Override
     public void openLocal() {
         setFunctionItemAndIteratorWithCurrentContext(this.currentDynamicContextForLocalExecution);
-        try {
-            this.functionCallIterator.open(this.currentDynamicContextForLocalExecution);
-        } catch (InvalidRumbleMLParamException e) {
-            String m = e.getMLMessage();
-            throw new InvalidRumbleMLParamException(m, getMetadata());
-        }
+        this.functionCallIterator.open(this.currentDynamicContextForLocalExecution);
         setNextResult();
     }
 
@@ -110,12 +100,7 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
     public void setNextResult() {
         this.nextResult = null;
         if (this.functionCallIterator.hasNext()) {
-            try {
-                this.nextResult = this.functionCallIterator.next();
-            } catch (InvalidRumbleMLParamException e) {
-                String m = e.getMLMessage();
-                throw new InvalidRumbleMLParamException(m, getMetadata());
-            }
+            this.nextResult = this.functionCallIterator.next();
         }
 
         if (this.nextResult == null) {
@@ -134,27 +119,23 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
                     getMetadata()
             );
         }
-        if (this.functionItem == null || !this.functionItem.isFunction()) {
+        if (this.functionItem == null && !this.functionItem.isFunction()) {
             throw new UnexpectedTypeException(
                     "Dynamic function calls can only be performed on functions.",
                     getMetadata()
             );
         }
-        if (
-            this.functionItem.getBodyIterator().getHighestExecutionMode().equals(ExecutionMode.LOCAL)
-                && this.getHighestExecutionMode().equals(ExecutionMode.DATAFRAME)
-        ) {
+        if (!this.functionItem.getBodyIterator().getHighestExecutionMode().equals(this.getHighestExecutionMode())) {
             throw new OurBadException(
-                    "Execution mode mismatch in dynamic function call. At this point, Rumble only supports higher-order functions "
-                        + "that are either machine learning models or estimators (which process validated and structured sequences of objects at any scale), or that take and return just one item at a time.",
-                    getMetadata()
+                    "Execution mode mismatch in dynamic function call: expression expects "
+                        + this.getHighestExecutionMode()
+                        + " but function item expects "
+                        + this.functionItem.getBodyIterator().getHighestExecutionMode()
             );
         }
         this.functionCallIterator = NamedFunctions.buildUserDefinedFunctionCallIterator(
             this.functionItem,
-            this.isPartialApplication
-                ? ExecutionMode.LOCAL
-                : this.functionItem.getBodyIterator().getHighestExecutionMode(),
+            this.functionItem.getBodyIterator().getHighestExecutionMode(),
             getMetadata(),
             this.functionArguments
         );
@@ -175,10 +156,6 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
         }
     }
 
-    protected boolean implementsDataFrames() {
-        return true;
-    }
-
     @Override
     public JavaRDD<Item> getRDDAux(DynamicContext dynamicContext) {
         setFunctionItemAndIteratorWithCurrentContext(dynamicContext);
@@ -188,11 +165,6 @@ public class DynamicFunctionCallIterator extends HybridRuntimeIterator {
     @Override
     public JSoundDataFrame getDataFrame(DynamicContext dynamicContext) {
         setFunctionItemAndIteratorWithCurrentContext(dynamicContext);
-        try {
-            return this.functionCallIterator.getDataFrame(dynamicContext);
-        } catch (InvalidRumbleMLParamException e) {
-            String m = e.getMLMessage();
-            throw new InvalidRumbleMLParamException(m, getMetadata());
-        }
+        return this.functionCallIterator.getDataFrame(dynamicContext);
     }
 }

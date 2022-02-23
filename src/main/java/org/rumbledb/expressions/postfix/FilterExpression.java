@@ -37,6 +37,7 @@ import java.util.List;
 
 public class FilterExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
     private Expression mainExpression;
     private Expression predicateExpression;
 
@@ -86,7 +87,7 @@ public class FilterExpression extends Expression {
             if (ItemFactory.getInstance().createIntegerItem(lexicalValue).isInt()) {
                 if (
                     ItemFactory.getInstance().createIntegerItem(lexicalValue).getIntValue() <= this.staticContext
-                        .getRumbleConfiguration()
+                        .getRumbleCOnfiguration()
                         .getResultSizeCap()
                 ) {
                     this.highestExecutionMode = ExecutionMode.LOCAL;
@@ -95,15 +96,8 @@ public class FilterExpression extends Expression {
             }
         }
         this.highestExecutionMode = this.mainExpression.getHighestExecutionMode(visitorConfig);
-        if (!this.staticContext.getRumbleConfiguration().getNativeSQLPredicates()) {
-            if (this.highestExecutionMode.equals(ExecutionMode.DATAFRAME)) {
-                this.highestExecutionMode = ExecutionMode.RDD;
-            }
+        if (this.highestExecutionMode.equals(ExecutionMode.DATAFRAME)) {
+            this.highestExecutionMode = ExecutionMode.RDD;
         }
-    }
-
-    @Override
-    public boolean isContextDependent() {
-        return this.mainExpression.isContextDependent();
     }
 }

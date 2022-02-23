@@ -30,6 +30,8 @@ import org.rumbledb.expressions.Node;
 
 public class ContextItemExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
+
     public ContextItemExpression(ExceptionMetadata metadataFromContext) {
         super(metadataFromContext);
     }
@@ -48,10 +50,5 @@ public class ContextItemExpression extends Expression {
     public void serializeToJSONiq(StringBuffer sb, int indent) {
         indentIt(sb, indent);
         sb.append("$$");
-    }
-
-    @Override
-    public boolean isContextDependent() {
-        return true;
     }
 }

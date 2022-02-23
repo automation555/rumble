@@ -32,6 +32,7 @@ import java.util.List;
 
 public class DecimalLiteralExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
     private BigDecimal value;
 
     public DecimalLiteralExpression(BigDecimal value, ExceptionMetadata metadata) {
@@ -60,7 +61,7 @@ public class DecimalLiteralExpression extends Expression {
         buffer.append(getClass().getSimpleName());
         buffer.append(" (" + (this.value) + ") ");
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);

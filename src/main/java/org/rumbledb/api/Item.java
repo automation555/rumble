@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.ml.Estimator;
-import org.apache.spark.ml.Transformer;
 import org.joda.time.DateTime;
 import org.joda.time.Period;
 import org.rumbledb.context.DynamicContext;
@@ -17,7 +15,6 @@ import org.rumbledb.context.Name;
 import org.rumbledb.items.structured.JSoundDataFrame;
 import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.flwor.NativeClauseContext;
-import org.rumbledb.serialization.Serializer;
 import org.rumbledb.types.FunctionSignature;
 import org.rumbledb.types.ItemType;
 
@@ -216,52 +213,6 @@ public interface Item extends Serializable, KryoSerializable {
     }
 
     /**
-     * Tests whether the item is an atomic item of type gDay.
-     *
-     * @return true if it is an atomic item of type gDay, false otherwise.
-     */
-    default boolean isGDay() {
-        return false;
-    }
-
-    /**
-     * Tests whether the item is an atomic item of type gMonth.
-     *
-     * @return true if it is an atomic item of type gMonth, false otherwise.
-     */
-    default boolean isGMonth() {
-        return false;
-    }
-
-    /**
-     * Tests whether the item is an atomic item of type gYear.
-     *
-     * @return true if it is an atomic item of type gYear, false otherwise.
-     */
-    default boolean isGYear() {
-        return false;
-    }
-
-    /**
-     * Tests whether the item is an atomic item of type gMonthDay.
-     *
-     * @return true if it is an atomic item of type gMonthDay, false otherwise.
-     */
-    default boolean isGMonthDay() {
-        return false;
-    }
-
-    /**
-     * Tests whether the item is an atomic item of type gMonthDay.
-     *
-     * @return true if it is an atomic item of type gMonthDay, false otherwise.
-     */
-    default boolean isGYearMonth() {
-        return false;
-    }
-
-
-    /**
      * Tests whether the item is an atomic item of type anyURI.
      *
      * @return true if it is an atomic item of type anyURI, false otherwise.
@@ -354,7 +305,7 @@ public interface Item extends Serializable, KryoSerializable {
     }
 
     /**
-     * Returns the string value of the item, if it is an atomic item.
+     * Returns the string value of the item, if it is a string.
      *
      * @return the string value.
      */
@@ -485,6 +436,15 @@ public interface Item extends Serializable, KryoSerializable {
      * @return the function signature.
      */
     default public RuntimeIterator getBodyIterator() {
+        throw new UnsupportedOperationException("Operation not defined for type " + this.getDynamicType());
+    }
+
+    /**
+     * Returns the body iterator, if it is a function item.
+     * 
+     * @return the function signature.
+     */
+    default public Map<Long, RuntimeIterator> getBodyIterators() {
         throw new UnsupportedOperationException("Operation not defined for type " + this.getDynamicType());
     }
 
@@ -623,15 +583,6 @@ public interface Item extends Serializable, KryoSerializable {
     }
 
     /**
-     * Checks doubles and floats for NaN.
-     *
-     * @return true if NaN, false if not NaN.
-     */
-    default boolean isNaN() {
-        throw new UnsupportedOperationException("Operation not defined for type " + this.getDynamicType());
-    }
-
-    /**
      * Tests for logical equality. The semantics are that of the eq operator.
      *
      * @param other another item.
@@ -646,9 +597,7 @@ public interface Item extends Serializable, KryoSerializable {
      */
     int hashCode();
 
-    default String serialize() {
-        return new Serializer("UTF-8", Serializer.Method.XML_JSON_HYBRID, false, "\n").serialize(this);
-    }
+    String serialize();
 
     /**
      * Get sparkSql string for the item
@@ -658,21 +607,5 @@ public interface Item extends Serializable, KryoSerializable {
      */
     default NativeClauseContext generateNativeQuery(NativeClauseContext context) {
         return NativeClauseContext.NoNativeQuery;
-    }
-
-    default boolean isEstimator() {
-        return false;
-    }
-
-    default Estimator<?> getEstimator() {
-        throw new UnsupportedOperationException("Operation not defined for type " + this.getDynamicType());
-    }
-
-    default boolean isTransformer() {
-        return false;
-    }
-
-    default Transformer getTransformer() {
-        throw new UnsupportedOperationException("Operation not defined for type " + this.getDynamicType());
     }
 }

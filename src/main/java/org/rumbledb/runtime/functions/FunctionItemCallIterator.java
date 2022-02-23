@@ -41,7 +41,7 @@ import org.rumbledb.types.FunctionSignature;
 import org.rumbledb.types.SequenceType;
 import org.rumbledb.types.SequenceType.Arity;
 
-import static org.rumbledb.types.SequenceType.ITEM_STAR;
+import static org.rumbledb.types.SequenceType.MOST_GENERAL_SEQUENCE_TYPE;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -124,7 +124,7 @@ public class FunctionItemCallIterator extends HybridRuntimeIterator {
                         && !this.functionItem.getSignature()
                             .getParameterTypes()
                             .get(i)
-                            .equals(ITEM_STAR)
+                            .equals(MOST_GENERAL_SEQUENCE_TYPE)
                 ) {
                     SequenceType sequenceType = this.functionItem.getSignature().getParameterTypes().get(i);
                     ExecutionMode executionMode = this.functionArguments.get(i).getHighestExecutionMode();
@@ -232,7 +232,7 @@ public class FunctionItemCallIterator extends HybridRuntimeIterator {
                         this.functionItem.getSignature().getReturnType()
                 ),
                 this.functionItem.getModuleDynamicContext(),
-                this.functionItem.getBodyIterator(),
+                this.functionItem.getBodyIterators(),
                 localArgumentValues,
                 RDDArgumentValues,
                 DFArgumentValues

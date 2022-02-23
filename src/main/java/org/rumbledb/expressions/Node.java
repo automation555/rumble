@@ -24,6 +24,7 @@ import org.rumbledb.compiler.VisitorConfig;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.OurBadException;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
@@ -32,8 +33,9 @@ import java.util.function.Predicate;
  * This is the top-level class for nodes in the intermediate representation of a
  * JSONiq query. Nodes include expressions, clauses, function declarations, etc.
  */
-public abstract class Node {
+public abstract class Node implements Serializable {
 
+    private static final long serialVersionUID = 1L;
     private ExceptionMetadata metadata;
 
     protected ExecutionMode highestExecutionMode = ExecutionMode.UNSET;
@@ -53,26 +55,10 @@ public abstract class Node {
      * overridden by subclasses that support higher execution modes. By
      * default, the highest execution mode is assumed to be local.
      * 
-     * This method is deprecated as the logic of execution mode
-     * initialization is being moved to the ExecutionModeVisitor
-     * which invokes setHighestExecutionMode.
-     *
      * @param visitorConfig the configuration of the visitor.
      */
     public void initHighestExecutionMode(VisitorConfig visitorConfig) {
         this.highestExecutionMode = ExecutionMode.LOCAL;
-    }
-
-    /**
-     * Initializes the highest execution mode of this node, which determines
-     * whether evaluation will be done locally, with RDDs or with DataFrames.
-     *
-     * This method is used during the static analysis. It is meant to be
-     * overridden by subclasses that support higher execution modes. By
-     * default, the highest execution mode is assumed to be local.
-     */
-    public final void setHighestExecutionMode(ExecutionMode newMode) {
-        this.highestExecutionMode = newMode;
     }
 
     /**
@@ -198,19 +184,5 @@ public abstract class Node {
         for (int i = 0; i < indent; ++i) {
             buffer.append("  ");
         }
-    }
-
-    /**
-     * Tells whether the expression is context dependent.
-     * 
-     * @return true if it is context dependent, false otherwise.
-     */
-    public boolean isContextDependent() {
-        for (Node node : this.getChildren()) {
-            if (node.isContextDependent()) {
-                return true;
-            }
-        }
-        return false;
     }
 }

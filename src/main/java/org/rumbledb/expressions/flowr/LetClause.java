@@ -36,6 +36,7 @@ import java.util.List;
 
 public class LetClause extends Clause {
 
+    private static final long serialVersionUID = 1L;
     private final Name variableName;
     protected SequenceType sequenceType;
     protected Expression expression;
@@ -63,7 +64,7 @@ public class LetClause extends Clause {
     }
 
     public SequenceType getSequenceType() {
-        return this.sequenceType == null ? SequenceType.ITEM_STAR : this.sequenceType;
+        return this.sequenceType == null ? SequenceType.MOST_GENERAL_SEQUENCE_TYPE : this.sequenceType;
     }
 
     public SequenceType getActualSequenceType() {
@@ -114,14 +115,7 @@ public class LetClause extends Clause {
             buffer.append("  ");
         }
         buffer.append(getClass().getSimpleName());
-        buffer.append(
-            " ("
-                + (this.variableName)
-                + ", "
-                + this.getSequenceType().toString()
-                + (this.getSequenceType().isResolved() ? " (resolved)" : " (unresolved)")
-                + ") "
-        );
+        buffer.append(" (" + (this.variableName) + ", " + this.getSequenceType().toString() + ") ");
         buffer.append(")");
         buffer.append(" | " + this.highestExecutionMode);
         buffer.append("\n");

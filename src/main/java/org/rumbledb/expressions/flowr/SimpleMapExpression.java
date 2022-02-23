@@ -31,6 +31,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public class SimpleMapExpression extends Expression {
+    private static final long serialVersionUID = 1L;
     private Expression leftExpression;
     private Expression rightExpression;
 
@@ -66,7 +67,7 @@ public class SimpleMapExpression extends Expression {
         buffer.append(getClass().getSimpleName());
         buffer.append(" (!)");
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);
@@ -93,11 +94,6 @@ public class SimpleMapExpression extends Expression {
 
         indentIt(sb, indent);
         sb.append(")\n");
-    }
-
-    @Override
-    public boolean isContextDependent() {
-        return this.leftExpression.isContextDependent();
     }
 
 }

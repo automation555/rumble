@@ -33,6 +33,7 @@ import org.rumbledb.types.SequenceType;
 
 public class InstanceOfExpression extends Expression {
 
+    private static final long serialVersionUID = 1L;
     private Expression mainExpression;
     private SequenceType sequenceType;
 
@@ -72,14 +73,9 @@ public class InstanceOfExpression extends Expression {
             buffer.append("  ");
         }
         buffer.append(getClass().getSimpleName());
-        buffer.append(
-            " ("
-                + (this.sequenceType.toString())
-                + (this.getSequenceType().isResolved() ? " (resolved)" : " (unresolved)")
-                + ") "
-        );
+        buffer.append(" (" + (this.sequenceType.toString()) + ") ");
         buffer.append(" | " + this.highestExecutionMode);
-        buffer.append(" | " + (this.staticSequenceType == null ? "not set" : this.staticSequenceType));
+        buffer.append(" | " + (this.inferredSequenceType == null ? "not set" : this.inferredSequenceType));
         buffer.append("\n");
         for (Node iterator : getChildren()) {
             iterator.print(buffer, indent + 1);
