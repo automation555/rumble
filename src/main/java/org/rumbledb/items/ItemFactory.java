@@ -1,12 +1,11 @@
 package org.rumbledb.items;
 
-import org.joda.time.DateTime;
-import org.joda.time.Period;
+import java.time.ZonedDateTime;
+import java.time.Period;
 import org.rumbledb.api.Item;
 import org.rumbledb.exceptions.ExceptionMetadata;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 
@@ -17,11 +16,6 @@ public class ItemFactory {
     private Item trueBooleanItem;
     private Item falseBooleanItem;
     private Item zeroItem;
-    private Item positiveInfinityDoubleItem;
-    private Item negativeInfinityDoubleItem;
-    private Item positiveZeroDoubleItem;
-    private Item negativeZeroDoubleItem;
-    private Item NaNDoubleItem;
 
     public static ItemFactory getInstance() {
         if (instance == null) {
@@ -29,12 +23,7 @@ public class ItemFactory {
             instance.nullItem = new NullItem();
             instance.trueBooleanItem = new BooleanItem(true);
             instance.falseBooleanItem = new BooleanItem(false);
-            instance.zeroItem = new IntItem(0);
-            instance.positiveInfinityDoubleItem = new DoubleItem(Double.POSITIVE_INFINITY);
-            instance.negativeInfinityDoubleItem = new DoubleItem(Double.NEGATIVE_INFINITY);
-            instance.positiveZeroDoubleItem = new DoubleItem(0.0);
-            instance.negativeZeroDoubleItem = new DoubleItem(-0.0);
-            instance.NaNDoubleItem = new DoubleItem(Double.NaN);
+            instance.zeroItem = new IntegerItem(0);
         }
         return instance;
     }
@@ -51,59 +40,19 @@ public class ItemFactory {
         return this.nullItem;
     }
 
+    public Item createIntegerItem(int i) {
+        if (i == 0) {
+            return this.zeroItem;
+        }
+        return new IntegerItem(i);
+    }
+
     public Item createDecimalItem(BigDecimal d) {
         return new DecimalItem(d);
     }
 
-    public Item createIntegerItem(BigInteger i) {
-        return new IntegerItem(i);
-    }
-
-    public Item createIntItem(int i) {
-        if (i == 0) {
-            return this.zeroItem;
-        }
-        return new IntItem(i);
-    }
-
-    public Item createLongItem(long l) {
-        if (l == 0) {
-            return this.zeroItem;
-        }
-        if (l >= Integer.MIN_VALUE && l <= Integer.MAX_VALUE) {
-            return new IntItem((int) l);
-        }
-        return new IntegerItem(BigInteger.valueOf(l));
-    }
-
-    public Item createIntegerItem(String lexicalValue) {
-        if (lexicalValue.length() >= 10) {
-            return new IntegerItem(new BigInteger(lexicalValue));
-        }
-        return new IntItem(Integer.parseInt(lexicalValue));
-    }
-
     public Item createDoubleItem(double d) {
-        if (d == Double.POSITIVE_INFINITY) {
-            return this.positiveInfinityDoubleItem;
-        }
-        if (d == Double.NEGATIVE_INFINITY) {
-            return this.negativeInfinityDoubleItem;
-        }
-        if (d == 0.0) {
-            return this.positiveZeroDoubleItem;
-        }
-        if (d == 0.0) {
-            return this.negativeZeroDoubleItem;
-        }
-        if (d == Double.NaN) {
-            return this.NaNDoubleItem;
-        }
         return new DoubleItem(d);
-    }
-
-    public Item createFloatItem(float d) {
-        return new FloatItem(d);
     }
 
     public Item createDurationItem(Period p) {
@@ -118,7 +67,7 @@ public class ItemFactory {
         return new DayTimeDurationItem(p);
     }
 
-    public Item createDateTimeItem(DateTime dt, boolean hasTimeZone) {
+    public Item createDateTimeItem(ZonedDateTime dt, boolean hasTimeZone) {
         return new DateTimeItem(dt, hasTimeZone);
     }
 
@@ -126,7 +75,7 @@ public class ItemFactory {
         return new DateTimeItem(s);
     }
 
-    public Item createDateItem(DateTime dt, boolean hasTimeZone) {
+    public Item createDateItem(ZonedDateTime dt, boolean hasTimeZone) {
         return new DateItem(dt, hasTimeZone);
     }
 
