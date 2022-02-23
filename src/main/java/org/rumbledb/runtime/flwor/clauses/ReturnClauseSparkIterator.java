@@ -33,20 +33,15 @@ import org.rumbledb.exceptions.IteratorFlowException;
 import org.rumbledb.exceptions.JobWithinAJobException;
 import org.rumbledb.exceptions.OurBadException;
 import org.rumbledb.expressions.ExecutionMode;
-import org.rumbledb.items.structured.JSoundDataFrame;
 import org.rumbledb.runtime.HybridRuntimeIterator;
 import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.RuntimeTupleIterator;
-import org.rumbledb.runtime.flwor.FLWORDataFrame;
 import org.rumbledb.runtime.flwor.FlworDataFrameUtils;
 import org.rumbledb.runtime.flwor.closures.ReturnFlatMapClosure;
 
 import sparksoniq.jsoniq.tuple.FlworTuple;
 import sparksoniq.spark.SparkSessionManager;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -62,17 +57,19 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
     private DynamicContext tupleContext; // re-use same DynamicContext object for efficiency
     private RuntimeIterator expression;
     private Item nextResult;
+    private final boolean escapeBackticks;
 
     public ReturnClauseSparkIterator(
             RuntimeTupleIterator child,
             RuntimeIterator expression,
             ExecutionMode executionMode,
-            ExceptionMetadata iteratorMetadata
+            ExceptionMetadata iteratorMetadata,
+            boolean escapeBackticks
     ) {
         super(Collections.singletonList(expression), executionMode, iteratorMetadata);
         this.child = child;
         this.expression = expression;
-        setInputAndOutputTupleVariableDependencies();
+        this.escapeBackticks = escapeBackticks;
     }
 
     @Override
@@ -106,21 +103,7 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
             }
             return result;
         }
-        FLWORDataFrame fdf = this.child.getDataFrame(context);
-        Dataset<Row> df = fdf.getDataFrame();
-        StructType oldSchema = df.schema();
-        List<String> UDFcolumns = FlworDataFrameUtils.getColumnNames(
-            oldSchema,
-            this.expression.getVariableDependencies(),
-            new ArrayList<Name>(this.child.getOutputTupleVariableNames()),
-            null
-        );
-        // TODO need to take types into account when converting.
-        return df.toJavaRDD().flatMap(new ReturnFlatMapClosure(expression, context, oldSchema, UDFcolumns));
-    }
-
-    private void setInputAndOutputTupleVariableDependencies() {
-        Map<Name, VariableDependency> dependencies = this.expression.getVariableDependencies();
+        Map<Name, VariableDependency> dependencies = expression.getVariableDependencies();
         Set<Name> allTupleNames = this.child.getOutputTupleVariableNames();
         Map<Name, VariableDependency> projection = new HashMap<>();
         for (Name n : dependencies.keySet()) {
@@ -128,11 +111,25 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
                 projection.put(n, dependencies.get(n));
             }
         }
-        this.child.setInputAndOutputTupleVariableDependencies(projection);
+        Dataset<Row> df = this.child.getDataFrame(context, projection);
+
+        // unescape backticks (`)
+        if (this.escapeBackticks) {
+            df = df.sparkSession().createDataFrame(df.rdd(), FlworDataFrameUtils.escapeSchema(df.schema(), true));
+        }
+
+        StructType oldSchema = df.schema();
+        List<String> UDFcolumns = FlworDataFrameUtils.getColumnNames(
+            oldSchema,
+            this.expression.getVariableDependencies(),
+            new ArrayList<Name>(this.child.getOutputTupleVariableNames()),
+            null
+        );
+        return df.toJavaRDD().flatMap(new ReturnFlatMapClosure(expression, context, oldSchema, UDFcolumns));
     }
 
     @Override
-    public JSoundDataFrame getDataFrame(DynamicContext context) {
+    public Dataset<Row> getDataFrame(DynamicContext context) {
         RuntimeIterator expression = this.children.get(0);
         if (expression.isRDDOrDataFrame()) {
             if (this.child.isDataFrame())
@@ -142,7 +139,7 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
                 );
             // context
             this.child.open(context);
-            JSoundDataFrame result = null;
+            Dataset<Row> result = null;
             while (this.child.hasNext()) {
                 FlworTuple tuple = this.child.next();
                 // We need a fresh context every time, because the evaluation of RDD is lazy.
@@ -150,7 +147,7 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
                 dynamicContext.getVariableValues().setBindingsFromTuple(tuple, getMetadata()); // assign new variables
                                                                                                // from new tuple
 
-                JSoundDataFrame intermediateResult = this.expression.getDataFrame(dynamicContext);
+                Dataset<Row> intermediateResult = this.expression.getDataFrame(dynamicContext);
                 if (result == null) {
                     result = intermediateResult;
                 } else {
@@ -158,7 +155,7 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
                 }
             }
             if (result == null) {
-                return JSoundDataFrame.emptyDataFrame();
+                return SparkSessionManager.getInstance().getOrCreateSession().emptyDataFrame();
             }
             return result;
         }
@@ -257,7 +254,7 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
         for (Name variable : this.child.getOutputTupleVariableNames()) {
             result.remove(variable);
         }
-        result.putAll(this.child.getDynamicContextVariableDependencies());
+        result.putAll(this.child.getVariableDependencies());
         return result;
     }
 
@@ -278,14 +275,4 @@ public class ReturnClauseSparkIterator extends HybridRuntimeIterator {
         this.child.print(buffer, indent + 1);
         this.expression.print(buffer, indent + 1);
     }
-
-    private void readObject(ObjectInputStream i) throws ClassNotFoundException, IOException {
-        i.defaultReadObject();
-        setInputAndOutputTupleVariableDependencies();
-    }
-
-    private void writeObject(ObjectOutputStream i) throws IOException {
-        i.defaultWriteObject();
-    }
-
 }

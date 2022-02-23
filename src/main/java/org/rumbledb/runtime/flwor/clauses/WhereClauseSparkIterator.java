@@ -25,7 +25,6 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructType;
 import org.rumbledb.context.DynamicContext;
-import org.rumbledb.context.DynamicContext.VariableDependency;
 import org.rumbledb.context.Name;
 import org.rumbledb.exceptions.ExceptionMetadata;
 import org.rumbledb.exceptions.IteratorFlowException;
@@ -35,7 +34,6 @@ import org.rumbledb.expressions.ExecutionMode;
 import org.rumbledb.expressions.flowr.FLWOR_CLAUSES;
 import org.rumbledb.runtime.RuntimeIterator;
 import org.rumbledb.runtime.RuntimeTupleIterator;
-import org.rumbledb.runtime.flwor.FLWORDataFrame;
 import org.rumbledb.runtime.flwor.FlworDataFrameUtils;
 import org.rumbledb.runtime.flwor.NativeClauseContext;
 import org.rumbledb.runtime.flwor.udfs.WhereClauseUDF;
@@ -43,7 +41,6 @@ import org.rumbledb.runtime.flwor.udfs.WhereClauseUDF;
 import sparksoniq.jsoniq.tuple.FlworTuple;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,16 +54,19 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
     private RuntimeIterator expression;
     private DynamicContext tupleContext; // re-use same DynamicContext object for efficiency
     private FlworTuple nextLocalTupleResult;
+    private final boolean escapeBackticks;
 
     public WhereClauseSparkIterator(
             RuntimeTupleIterator child,
             RuntimeIterator whereExpression,
             ExecutionMode executionMode,
-            ExceptionMetadata iteratorMetadata
+            ExceptionMetadata iteratorMetadata,
+            boolean escapeBackticks
     ) {
         super(child, executionMode, iteratorMetadata);
         this.expression = whereExpression;
         this.expression.getVariableDependencies();
+        this.escapeBackticks = escapeBackticks;
     }
 
     @Override
@@ -145,8 +145,9 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
     }
 
     @Override
-    public FLWORDataFrame getDataFrame(
-            DynamicContext context
+    public Dataset<Row> getDataFrame(
+            DynamicContext context,
+            Map<Name, DynamicContext.VariableDependency> parentProjection
     ) {
         if (this.child == null) {
             throw new OurBadException("Invalid where clause.");
@@ -159,13 +160,49 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
             );
         }
 
-        FLWORDataFrame dataFrameIfJoinPossible = getDataFrameIfJoinPossible(context);
-        if (dataFrameIfJoinPossible != null) {
-            return dataFrameIfJoinPossible;
+        if (
+            this.child instanceof ForClauseSparkIterator
+        ) {
+            ForClauseSparkIterator forChild = (ForClauseSparkIterator) this.child;
+            if (forChild.getChildIterator() != null) {
+                if (
+                    (!forChild.getAssignmentIterator().getHighestExecutionMode().equals(ExecutionMode.LOCAL))
+                        &&
+                        forChild.getChildIterator().getHighestExecutionMode().equals(ExecutionMode.DATAFRAME)
+                ) {
+                    RuntimeIterator sequenceIterator = forChild.getAssignmentIterator();
+                    Name forVariable = forChild.getVariableName();
+
+                    if (
+                        LetClauseSparkIterator.isExpressionIndependentFromInputTuple(sequenceIterator, this.child)
+                            && forChild.getPositionalVariableName() == null
+                            && !forChild.isAllowingEmpty()
+                    ) {
+                        System.err.println(
+                            "[INFO] Rumble detected a join predicate in the where clause."
+                        );
+
+                        return ForClauseSparkIterator.joinInputTupleWithSequenceOnPredicate(
+                            context,
+                            forChild.getChildIterator()
+                                .getDataFrame(context, forChild.getProjection(getProjection(parentProjection))),
+                            parentProjection,
+                            new ArrayList<Name>(this.child.getOutputTupleVariableNames()),
+                            sequenceIterator,
+                            this.expression,
+                            false,
+                            forVariable,
+                            null,
+                            forVariable,
+                            getMetadata(),
+                            this.escapeBackticks
+                        );
+                    }
+                }
+            }
         }
 
-        FLWORDataFrame fdf = this.child.getDataFrame(context);
-        Dataset<Row> df = fdf.getDataFrame();
+        Dataset<Row> df = this.child.getDataFrame(context, getProjection(parentProjection));
         StructType inputSchema = df.schema();
 
         Dataset<Row> nativeQueryResult = tryNativeQuery(
@@ -175,7 +212,7 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
             context
         );
         if (nativeQueryResult != null) {
-            return new FLWORDataFrame(nativeQueryResult, fdf.getSchema());
+            return nativeQueryResult;
         }
 
         // was not possible, we use let udf
@@ -204,126 +241,17 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
                     UDFParameters
                 )
             );
-        return new FLWORDataFrame(df, fdf.getSchema());
+        return df;
     }
 
-    private FLWORDataFrame getDataFrameIfJoinPossible(DynamicContext context) {
-        if (this.evaluationDepthLimit >= 0) {
-            return null;
-        }
-
-        int height = this.getHeight();
-        int limit = -1;
-        // System.err.println("[DEBUG] Height of the where clause: " + height);
-        for (int i = 1; i < height; ++i) {
-            if (!this.canSetEvaluationDepthLimit(i)) {
-                // System.err.println("[DEBUG] Depth " + i + " impossible (not a starting let or for clause).");
-                continue;
-            }
-            this.setEvaluationDepthLimit(i);
-            if (this.containsClause(FLWOR_CLAUSES.GROUP_BY)) {
-                // System.err.println("[DEBUG] Depth " + i + " does not work (because of a group by clause).");
-                continue;
-            }
-            if (this.containsClause(FLWOR_CLAUSES.COUNT)) {
-                // System.err.println("[DEBUG] Depth " + i + " does not work (because of a count clause).");
-                continue;
-            }
-            RuntimeTupleIterator otherChild = this.getSubtreeBeyondLimit(i);
-            if (!otherChild.getHighestExecutionMode().equals(ExecutionMode.DATAFRAME)) {
-                // System.err.println(
-                // "[DEBUG] Depth " + i + " does not work (because the left does not have a DataFrame execution)."
-                // );
-                continue;
-            }
-            Set<Name> leftNames = otherChild.getOutputTupleVariableNames();
-            Map<Name, VariableDependency> rightDependencies = this.child.getDynamicContextVariableDependencies();
-            Set<Name> rightNames = rightDependencies.keySet();
-            rightNames.retainAll(leftNames);
-            if (!rightNames.isEmpty()) {
-                // System.err.println(
-                // "[DEBUG] Depth "
-                // + i
-                // + " does not work (because of variable dependencies: "
-                // + Arrays.toString(rightNames.toArray())
-                // );
-                continue;
-            }
-            rightNames = this.child.getOutputTupleVariableNames();
-            rightNames.retainAll(leftNames);
-            if (!rightNames.isEmpty()) {
-                // System.err.println(
-                // "[DEBUG] Depth "
-                // + i
-                // + " does not work (because of variable collisions: "
-                // + Arrays.toString(rightNames.toArray())
-                // );
-                continue;
-            }
-            // System.err.println("[DEBUG] Depth " + i + " possible.");
-            // System.err.println(otherChild.toString());
-            limit = i;
-        }
-        this.setEvaluationDepthLimit(-1);
-        if (limit == -1) {
-            return null;
-        }
-
-        System.err.println(
-            "[INFO] Rumble detected a join predicate in the where clause (limit=" + limit + " of " + height + ")."
-        );
-
-        try {
-            FLWORDataFrame leftTuples = getSubtreeBeyondLimit(limit).getDataFrame(context);
-            Set<Name> leftVariables = getSubtreeBeyondLimit(limit).getOutputTupleVariableNames();
-            this.setEvaluationDepthLimit(limit);
-            Map<Name, VariableDependency> temporaryInputProjection = new HashMap<>(this.inputTupleProjection);
-            for (Name key : leftVariables) {
-                temporaryInputProjection.remove(key);
-            }
-            this.child.setInputAndOutputTupleVariableDependencies(temporaryInputProjection);
-            FLWORDataFrame rightTuples = this.child.getDataFrame(context);
-            this.child.setInputAndOutputTupleVariableDependencies(this.inputTupleProjection);
-
-            Set<Name> rightVariables = this.child.getOutputTupleVariableNames();
-            this.setEvaluationDepthLimit(-1);
-
-            // leftTuples.show();
-            // rightTuples.show();
-
-            FLWORDataFrame result = JoinClauseSparkIterator.joinInputTupleWithSequenceOnPredicate(
-                context,
-                leftTuples,
-                rightTuples,
-                this.outputTupleProjection,
-                new ArrayList<Name>(leftVariables),
-                new ArrayList<Name>(rightVariables),
-                this.expression,
-                false,
-                null,
-                getMetadata()
-            );
-            // result.show();
-            return result;
-        } catch (Exception e) {
-            System.err.println(
-                "[INFO] Join failed. Falling back to regular execution (nevertheless, please let us know!)."
-            );
-
-            this.setEvaluationDepthLimit(-1);
-            return null;
-        }
-
-    }
-
-    public Map<Name, DynamicContext.VariableDependency> getDynamicContextVariableDependencies() {
+    public Map<Name, DynamicContext.VariableDependency> getVariableDependencies() {
         Map<Name, DynamicContext.VariableDependency> result = new TreeMap<>(
                 this.expression.getVariableDependencies()
         );
         for (Name var : this.child.getOutputTupleVariableNames()) {
             result.remove(var);
         }
-        result.putAll(this.child.getDynamicContextVariableDependencies());
+        result.putAll(this.child.getVariableDependencies());
         return result;
     }
 
@@ -336,7 +264,7 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
         this.expression.print(buffer, indent + 1);
     }
 
-    public Map<Name, DynamicContext.VariableDependency> getInputTupleVariableDependencies(
+    public Map<Name, DynamicContext.VariableDependency> getProjection(
             Map<Name, DynamicContext.VariableDependency> parentProjection
     ) {
         // copy over the projection needed by the parent clause.
@@ -382,7 +310,7 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
         if (nativeQuery == NativeClauseContext.NoNativeQuery) {
             return null;
         }
-        System.err.println(
+        System.out.println(
             "[INFO] Rumble was able to optimize a where clause to a native SQL query: "
                 + nativeQuery.getResultingQuery()
         );
@@ -394,15 +322,5 @@ public class WhereClauseSparkIterator extends RuntimeTupleIterator {
                     nativeQuery.getResultingQuery()
                 )
             );
-    }
-
-    public boolean containsClause(FLWOR_CLAUSES kind) {
-        if (kind == FLWOR_CLAUSES.WHERE) {
-            return true;
-        }
-        if (this.child == null) {
-            return false;
-        }
-        return this.child.containsClause(kind);
     }
 }
