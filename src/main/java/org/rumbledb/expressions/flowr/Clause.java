@@ -34,8 +34,6 @@ import org.rumbledb.expressions.Node;
 public abstract class Clause extends Node {
 
     /* Clauses are organized in doubly-linked lists */
-    private static final long serialVersionUID = 1L;
-
     protected Clause previousClause;
     protected Clause nextClause;
     protected FLWOR_CLAUSES clauseType;
@@ -53,11 +51,11 @@ public abstract class Clause extends Node {
         return this.clauseType;
     }
 
-    public Clause getPreviousClause() {
+    public Clause getChildClause() {
         return this.previousClause;
     }
 
-    public Clause getNextClause() {
+    public Clause getParentClause() {
         return this.nextClause;
     }
 

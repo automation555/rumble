@@ -69,7 +69,7 @@ import org.rumbledb.expressions.postfix.ArrayLookupExpression;
 import org.rumbledb.expressions.postfix.ArrayUnboxingExpression;
 import org.rumbledb.expressions.postfix.DynamicFunctionCallExpression;
 import org.rumbledb.expressions.postfix.ObjectLookupExpression;
-import org.rumbledb.expressions.postfix.FilterExpression;
+import org.rumbledb.expressions.postfix.PredicateExpression;
 import org.rumbledb.expressions.primary.ArrayConstructorExpression;
 import org.rumbledb.expressions.primary.BooleanLiteralExpression;
 import org.rumbledb.expressions.primary.ContextItemExpression;
@@ -202,7 +202,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
     @Override
     public RuntimeIterator visitFlowrExpression(FlworExpression expression, RuntimeIterator argument) {
         RuntimeTupleIterator previous = this.visitFlowrClause(
-            expression.getReturnClause().getPreviousClause(),
+            expression.getReturnClause().getChildClause(),
             argument
         );
         RuntimeIterator runtimeIterator = new ReturnClauseSparkIterator(
@@ -212,8 +212,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
                     argument
                 ),
                 expression.getReturnClause().getHighestExecutionMode(this.visitorConfig),
-                expression.getReturnClause().getMetadata(),
-                this.config.escapeBackticks()
+                expression.getReturnClause().getMetadata()
         );
         runtimeIterator.setStaticContext(expression.getStaticContext());
         return runtimeIterator;
@@ -224,8 +223,8 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
             RuntimeIterator argument
     ) {
         RuntimeTupleIterator previousIterator = null;
-        if (clause.getPreviousClause() != null) {
-            previousIterator = this.visitFlowrClause(clause.getPreviousClause(), argument);
+        if (clause.getChildClause() != null) {
+            previousIterator = this.visitFlowrClause(clause.getChildClause(), argument);
         }
         if (clause instanceof ForClause) {
             ForClause forClause = (ForClause) clause;
@@ -237,8 +236,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
                     forClause.isAllowEmpty(),
                     assignmentIterator,
                     forClause.getHighestExecutionMode(this.visitorConfig),
-                    clause.getMetadata(),
-                    this.config.escapeBackticks()
+                    clause.getMetadata()
             );
         } else if (clause instanceof LetClause) {
             LetClause letClause = (LetClause) clause;
@@ -246,11 +244,9 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
             return new LetClauseSparkIterator(
                     previousIterator,
                     letClause.getVariableName(),
-                    letClause.getActualSequenceType(),
                     assignmentIterator,
                     letClause.getHighestExecutionMode(this.visitorConfig),
-                    clause.getMetadata(),
-                    this.config.escapeBackticks()
+                    clause.getMetadata()
             );
         } else if (clause instanceof GroupByClause) {
             List<GroupByClauseSparkIteratorExpression> groupingExpressions = new ArrayList<>();
@@ -309,8 +305,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
                     previousIterator,
                     this.visit(((WhereClause) clause).getWhereExpression(), argument),
                     clause.getHighestExecutionMode(this.visitorConfig),
-                    clause.getMetadata(),
-                    this.config.escapeBackticks()
+                    clause.getMetadata()
             );
         } else if (clause instanceof CountClause) {
             return new CountClauseSparkIterator(
@@ -338,7 +333,7 @@ public class RuntimeIteratorVisitor extends AbstractNodeVisitor<RuntimeIterator>
 
     // region primary
     @Override
-    public RuntimeIterator visitFilterExpression(FilterExpression expression, RuntimeIterator argument) {
+    public RuntimeIterator visitPredicateExpression(PredicateExpression expression, RuntimeIterator argument) {
         RuntimeIterator mainIterator = this.visit(expression.getMainExpression(), argument);
         if (expression.getPredicateExpression() instanceof IntegerLiteralExpression) {
             String lexicalValue = ((IntegerLiteralExpression) expression.getPredicateExpression()).getLexicalValue();
