@@ -1047,9 +1047,9 @@ public class ForClauseSparkIterator extends RuntimeTupleIterator {
                     .createDataFrame(rows.rdd(), FlworDataFrameUtils.escapeSchema(rows.schema(), false));
             }
 
-            String[] fields = rows.schema().fieldNames();
             rows.createOrReplaceTempView("assignment");
             if (DataFrameUtils.isSequenceOfObjects(rows)) {
+                String[] fields = rows.schema().fieldNames();
                 String columnNames = FlworDataFrameUtils.getSQLProjection(Arrays.asList(fields), false);
                 df = rows.sparkSession()
                     .sql(
