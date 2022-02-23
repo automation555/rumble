@@ -1,4 +1,4 @@
-// Generated from ./src/main/java/org/rumbledb/parser/Jsoniq.g4 by ANTLR 4.8
+// Generated from ./src/main/java/org/rumbledb/parser/Jsoniq.g4 by ANTLR 4.7
 
 // Java header
 package org.rumbledb.parser;
@@ -126,13 +126,6 @@ public class JsoniqBaseVisitor<T> extends AbstractParseTreeVisitor<T> implements
 	 * {@link #visitChildren} on {@code ctx}.</p>
 	 */
 	@Override public T visitVarDecl(JsoniqParser.VarDeclContext ctx) { return visitChildren(ctx); }
-	/**
-	 * {@inheritDoc}
-	 *
-	 * <p>The default implementation returns the result of calling
-	 * {@link #visitChildren} on {@code ctx}.</p>
-	 */
-	@Override public T visitContextItemDecl(JsoniqParser.ContextItemDeclContext ctx) { return visitChildren(ctx); }
 	/**
 	 * {@inheritDoc}
 	 *

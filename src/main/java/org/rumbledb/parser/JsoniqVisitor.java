@@ -1,4 +1,4 @@
-// Generated from ./src/main/java/org/rumbledb/parser/Jsoniq.g4 by ANTLR 4.8
+// Generated from ./src/main/java/org/rumbledb/parser/Jsoniq.g4 by ANTLR 4.7
 
 // Java header
 package org.rumbledb.parser;
@@ -109,12 +109,6 @@ public interface JsoniqVisitor<T> extends ParseTreeVisitor<T> {
 	 * @return the visitor result
 	 */
 	T visitVarDecl(JsoniqParser.VarDeclContext ctx);
-	/**
-	 * Visit a parse tree produced by {@link JsoniqParser#contextItemDecl}.
-	 * @param ctx the parse tree
-	 * @return the visitor result
-	 */
-	T visitContextItemDecl(JsoniqParser.ContextItemDeclContext ctx);
 	/**
 	 * Visit a parse tree produced by {@link JsoniqParser#functionDecl}.
 	 * @param ctx the parse tree
